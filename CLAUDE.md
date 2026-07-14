@@ -1,6 +1,10 @@
 # CLAUDE.md — learn-langchain
 
-LangChain.js 学习项目。用于教学演示和技能练习。
+LangChain.js 学习项目，用于教学演示和技能练习。
+
+> 本项目基于 Matt Pocock 的 [teach skill](https://github.com/matt-pocock-skills) 教学框架构建。
+> 教学 workspace 位于 `~/.claude/skills/teach/`，包含 MISSION.md、GLOSSARY.md、学习记录等。
+> 课程 HTML 页面遵循 teach skill 的课程格式规范（Tufte 风格、知识检查、推荐阅读等）。
 
 ## 项目约定
 
