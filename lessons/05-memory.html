@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 05 — Memory：对话记忆与多轮交互</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>Lesson 05: Memory — 对话记忆与多轮交互</h1>
+
+<div class="lesson-meta">
+  <span>📅 2025-07-14</span>
+  <span>⏱ ~25 分钟</span>
+  <span>🎯 让 Agent 记住上下文，处理多轮对话</span>
+  <span>📎 课前要求: <a href="04-rag.html">Lesson 0004</a></span>
+</div>
+
+<h2>你将要学会的</h2>
+<ol>
+  <li><strong>Memory 的本质</strong> — 就是消息历史的管理策略</li>
+  <li><strong>手动记忆</strong> — 维护消息数组，每次 invoke 传入完整历史</li>
+  <li><strong>窗口记忆</strong> — 只保留最近 N 条消息，控制 token 成本</li>
+  <li><strong>摘要记忆</strong> — 压缩早期对话为摘要，平衡记忆与成本</li>
+</ol>
+
+<h2>先跑代码</h2>
+
+<pre><code>cd learn-langchain
+npx tsx 05-memory-demo.ts</code></pre>
+
+<p>四个演示依次运行：失忆症 → 手动记忆 → 窗口截断 → 摘要压缩。对比输出，理解每种策略的取舍。</p>
+
+<h2>问题：Agent 天生是"失忆症患者"</h2>
+
+<p>你在前面四课中写的所有 Agent，每次 <code>invoke()</code> 都是独立的全新对话。看演示 1：</p>
+
+<pre><code>// 第 1 轮
+const r1 = await agent.invoke({
+  messages: [
+    { role: "system", content: "你是助手。" },
+    { role: "user", content: "我叫小明。" },
+  ],
+});
+// → Agent: "记住了，小明！"
+
+// 第 2 轮 — 没有传入第 1 轮的消息！
+const r2 = await agent.invoke({
+  messages: [
+    { role: "system", content: "你是助手。" },
+    { role: "user", content: "我叫什么名字？" },
+  ],
+});
+// → Agent: "我们还没认识呢，你叫什么？"  ← 失忆了！</code></pre>
+
+<div class="callout">
+<strong>Agent 没有内置记忆。</strong>每次 <code>invoke()</code> 都是一个全新的 LLM 请求。Agent 只能看到你在 <code>messages</code> 数组里传入的内容——如果历史消息不在数组里，Agent 就不知道。
+</div>
+
+<h2>解决方案 1: 手动记忆（最直接）</h2>
+
+<p>把消息数组维护在外部变量中，每次 invoke 后追加 AI 回复，下次 invoke 时传入完整历史：</p>
+
+<pre><code>// 维护一个外部消息历史
+let history = [
+  { role: "system", content: "你是助手。用中文回复。" },
+];
+
+// 第 1 轮
+history.push({ role: "user", content: "我叫小明。" });
+const r1 = await agent.invoke({ messages: [...history] });
+history.push({ role: "assistant", content: lastContent(r1) });
+
+// 第 2 轮 — 传入完整历史
+history.push({ role: "user", content: "我叫什么名字？" });
+const r2 = await agent.invoke({ messages: [...history] });
+// → "你叫小明。"  ← 记得了！</code></pre>
+
+<p>这就是 <strong>Conversation Buffer Memory</strong>——把整个对话历史当作记忆。简单、可靠，但消息越多 token 消耗越大。</p>
+
+<h2>解决方案 2: 窗口记忆（控制成本）</h2>
+
+<p>当对话很长时，完整历史会超出上下文窗口或消耗大量 token。解决方案：只保留最近 N 条消息。</p>
+
+<pre><code>const WINDOW_SIZE = 5; // system(1) + 最近 4 条
+
+function windowTruncate(history, size) {
+  const systemMsg = history[0];           // 始终保留 system prompt
+  const recent = history.slice(-(size - 1)); // 最近的消息
+  return [systemMsg, ...recent];
+}
+
+// 长对话 → 截断后只有最近 5 条
+const truncated = windowTruncate(longHistory, WINDOW_SIZE);
+const result = await agent.invoke({
+  messages: [...truncated, { role: "user", content: "记得我叫什么吗？" }],
+});
+// → "抱歉，我不知道你的名字。"  ← 早期信息被截掉了！</code></pre>
+
+<div class="callout warn">
+<strong>权衡：</strong>窗口记忆用遗忘换成本。窗口越小越省钱，但 Agent 能记住的上下文越少。适合"只需要最近几轮上下文"的场景（如客服对话中只需要记得当前问题的相关细节）。
+</div>
+
+<h2>解决方案 3: 摘要记忆（平衡方案）</h2>
+
+<p>把被窗口截掉的早期对话<strong>压缩成一段摘要</strong>，注入 system prompt。这样既节省 token，又不完全丢失早期信息：</p>
+
+<pre><code>// 把早期对话压缩为摘要
+const earlySummary =
+  "[对话摘要] 用户叫小明，喜欢看电影（尤其是科幻片）和打篮球。";
+
+const result = await agent.invoke({
+  messages: [
+    {
+      role: "system",
+      content: `你是助手。${earlySummary}`,  // 摘要注入 system prompt
+    },
+    ...recentMessages,
+    { role: "user", content: "推荐一部适合我的电影。" },
+  ],
+});
+// → "推荐《头号玩家》——科幻题材，节奏紧凑适合爱运动的人。"
+// ✅ 虽然早期消息被截掉了，但 Agent 通过摘要知道了用户偏好！</code></pre>
+
+<p>摘要可以由另一个 LLM 调用来生成，或者在你自己的业务逻辑中维护。</p>
+
+<h2>三种策略对比</h2>
+
+<table style="width:100%; border-collapse:collapse; margin-bottom:1.2rem;">
+  <tr style="border-bottom:2px solid var(--border); text-align:left;">
+    <th style="padding:0.5rem 0.75rem;">策略</th>
+    <th style="padding:0.5rem 0.75rem;">记忆完整度</th>
+    <th style="padding:0.5rem 0.75rem;">Token 成本</th>
+    <th style="padding:0.5rem 0.75rem;">适合场景</th>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>Buffer</strong></td>
+    <td style="padding:0.5rem 0.75rem;">100%</td>
+    <td style="padding:0.5rem 0.75rem;">线性增长，无上限</td>
+    <td style="padding:0.5rem 0.75rem;">短对话、原型、测试</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>Window</strong></td>
+    <td style="padding:0.5rem 0.75rem;">最近 N 条</td>
+    <td style="padding:0.5rem 0.75rem;">固定上限</td>
+    <td style="padding:0.5rem 0.75rem;">客服、需要最近上下文的场景</td>
+  </tr>
+  <tr>
+    <td style="padding:0.5rem 0.75rem;"><strong>Summary</strong></td>
+    <td style="padding:0.5rem 0.75rem;">压缩但不丢失关键信息</td>
+    <td style="padding:0.5rem 0.75rem;">摘要 + 窗口</td>
+    <td style="padding:0.5rem 0.75rem;">长期对话、个人助手</td>
+  </tr>
+</table>
+
+<h2>总结：Memory 不是什么神秘的东西</h2>
+
+<p>LangChain.js 的 Agent API 中，Memory <strong>不是框架内置的黑盒</strong>——它就是你对消息历史的<strong>管理策略</strong>：</p>
+
+<ol>
+  <li>维护一个消息数组</li>
+  <li>每次 <code>invoke()</code> 时传入</li>
+  <li>每次返回后追加 AI 回复</li>
+  <li>根据需要截断、压缩、或存储</li>
+</ol>
+
+<div class="callout tip">
+<strong>你已经有能力构建一个完整的聊天应用了：</strong>RAG 工具让 Agent 能搜索知识库，Memory 让它能记住对话历史，Tool 让它能执行操作。这三者的组合就是你简历上那个"构建过生产级 AI Agent"的证明。
+</div>
+
+<h2>知识检查</h2>
+
+<div class="quiz" id="q1">
+  <div class="question">1. Agent 为什么会在两次 invoke 之间"失忆"？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. Agent 的模型权重在每次调用后被重置</div>
+    <div class="option" data-value="b">B. 每次 invoke 是独立的请求，Agent 只能看到传入的 messages 数组</div>
+    <div class="option" data-value="c">C. LangChain.js 会自动清除 Agent 的内部状态缓存</div>
+    <div class="option" data-value="d">D. DeepSeek 的 API 不支持多轮对话</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q2">
+  <div class="question">2. 窗口记忆（Window Memory）的主要代价是什么？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 代码复杂度大幅增加，需要引入额外的数据库</div>
+    <div class="option" data-value="b">B. 窗口外的早期信息被丢弃，Agent 可能忘记重要的上下文</div>
+    <div class="option" data-value="c">C. 每次调用需要额外的 API 请求来压缩历史</div>
+    <div class="option" data-value="d">D. 只能处理英文对话，不支持中文</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q3">
+  <div class="question">3. 摘要记忆 + 窗口记忆的组合方案解决了什么问题？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 完全消除了 token 消耗，让对话零成本运行</div>
+    <div class="option" data-value="b">B. 在控制 token 成本的同时，通过摘要保留早期关键信息</div>
+    <div class="option" data-value="c">C. 让 Agent 能同时处理 100 个并发对话</div>
+    <div class="option" data-value="d">D. 将对话历史的存储从内存迁移到 GPU 显存</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<script>
+(function() {
+  const answers = {
+    q1: { correct: "b", explanation: "正确！<code>invoke()</code> 是无状态的。每次调用只处理你传入的 <code>messages</code> 数组。Agent 不会在服务端保存任何历史状态——你在 messages 里放了什么，Agent 就能看到什么。" },
+    q2: { correct: "b", explanation: "正确！窗口记忆的核心代价就是「遗忘」。窗口外的消息被永久丢弃，如果早期消息包含关键信息（如用户名字），Agent 就无法获取。这是用记忆完整度换 token 成本的权衡。" },
+    q3: { correct: "b", explanation: "正确！摘要记忆是对窗口记忆的补充：把被截掉的早期对话压缩为一段摘要保留在 system prompt 中。这样既不占用太多 token，又不会完全丢失早期信息。是生产环境中最实用的方案。" }
+  };
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const info = answers[quiz.id];
+    const options = quiz.querySelectorAll('.option');
+    const feedback = quiz.querySelector('.feedback');
+    options.forEach(opt => {
+      opt.addEventListener('click', () => {
+        if (opt.classList.contains('correct') || opt.classList.contains('incorrect')) return;
+        options.forEach(o => { o.classList.remove('selected', 'correct', 'incorrect'); });
+        opt.classList.add('selected');
+        if (opt.dataset.value === info.correct) {
+          opt.classList.add('correct');
+          feedback.className = 'feedback correct show';
+        } else {
+          opt.classList.add('incorrect');
+          feedback.className = 'feedback incorrect show';
+          options.forEach(o => { if (o.dataset.value === info.correct) o.classList.add('correct'); });
+        }
+        feedback.innerHTML = info.explanation;
+      });
+    });
+  });
+})();
+</script>
+
+<h2>推荐阅读</h2>
+<ul>
+  <li><a href="https://docs.langchain.com/oss/javascript/langchain/learn">LangChain.js 官方 Learn</a> — Memory & multi-turn conversations</li>
+  <li><a href="https://github.com/microsoft/langchainjs-for-beginners">Microsoft LangChain.js for Beginners</a> — 第 5-6 课涉及 memory 和 multi-turn</li>
+</ul>
+
+<div class="callout tip">
+<strong>有问题？</strong> Memory 策略的选择取决于具体场景——对话长度、用户期望的记忆深度、预算限制。有任何疑惑直接问。
+</div>
+
+<hr style="margin:2rem 0 1rem; border:none; border-top:1px solid var(--border);">
+
+<div class="lesson-nav">
+  <a href="04-rag.html">← 上一课: 0004 RAG</a>
+  <a href="06-capstone.html">下一课 → 0006: 实战项目</a>
+</div>
+
+</body>
+</html>

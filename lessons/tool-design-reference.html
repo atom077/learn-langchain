@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tool Design Reference — LangChain.js</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .badge { display:inline-block; padding:0.15em 0.5em; border-radius:3px; font-size:0.75rem; font-weight:600; }
+  .badge-do   { background:#d4edda; color:#155724; }
+  .badge-dont { background:#f8d7da; color:#721c24; }
+  table { font-size:0.9rem; }
+  th { font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>🛠 LangChain.js 工具设计参考卡片</h1>
+<div class="lesson-meta">
+  <span>快速查阅</span>
+  <span>关联课程: <a href="../lessons/03-tool-design.html">Lesson 0003</a></span>
+</div>
+
+<h2>工具结构模板</h2>
+<pre><code>const myTool = tool(
+  async ({ param1, param2 }) => {
+    // 永远返回 JSON.stringify({...})，不抛异常
+    return JSON.stringify({ success: true, data: {...} });
+  },
+  {
+    name: "my_tool",              // snake_case，动词_名词
+    description: "做什么。何时用。有何限制。",
+    schema: z.object({
+      param1: z.string().describe("参数含义和格式"),
+      param2: z.number().min(0).describe("参数含义和约束"),
+    }),
+  }
+);</code></pre>
+
+<h2>Schema 速查</h2>
+<table>
+  <tr><th>需求</th><th>Zod</th></tr>
+  <tr><td>字符串</td><td><code>z.string()</code></td></tr>
+  <tr><td>数字</td><td><code>z.number()</code></td></tr>
+  <tr><td>整数</td><td><code>z.number().int()</code></td></tr>
+  <tr><td>布尔</td><td><code>z.boolean()</code></td></tr>
+  <tr><td>枚举</td><td><code>z.enum(["a", "b", "c"])</code></td></tr>
+  <tr><td>数组</td><td><code>z.array(z.string())</code></td></tr>
+  <tr><td>嵌套对象</td><td><code>z.object({...})</code></td></tr>
+  <tr><td>可选</td><td><code>.optional()</code></td></tr>
+  <tr><td>最小值</td><td><code>.min(0)</code></td></tr>
+  <tr><td>最大值</td><td><code>.max(100)</code></td></tr>
+  <tr><td>描述（给 LLM）</td><td><code>.describe("...")</code></td></tr>
+</table>
+
+<h2>错误返回模板</h2>
+<pre><code>return JSON.stringify({
+  success: false,
+  error: "ERROR_CODE",        // 机器可读
+  message: "用户可读的解释",
+  availableOptions: [...],    // 帮助 LLM 推理
+  currentValue: 42,
+  suggestion: "...",
+});</code></pre>
+
+<h2>描述黄金法则</h2>
+<table>
+  <tr><th>法则</th><th><span class="badge badge-do">✅ DO</span></th><th><span class="badge badge-dont">❌ DON'T</span></th></tr>
+  <tr><td>说明做什么</td><td>"搜索产品。按关键词、分类、价格过滤。"</td><td>"调用 search API"</td></tr>
+  <tr><td>说明何时用</td><td>"当用户询问时间或日期时使用"</td><td>"获取当前时间"</td></tr>
+  <tr><td>说明限制</td><td>"仅支持 AAPL, GOOGL, TSLA, MSFT"</td><td>"查询股票价格"</td></tr>
+  <tr><td>对偶提示</td><td>"涉及金额时必须用此工具验证"</td><td>"执行数学计算"</td></tr>
+  <tr><td>参数描述</td><td>"股票代码，如 AAPL 或 TSLA"</td><td>"代码" 或留空</td></tr>
+</table>
+
+<h2>命名规范</h2>
+<table>
+  <tr><th>元素</th><th>规范</th><th>示例</th></tr>
+  <tr><td>工具名 (<code>name</code>)</td><td>snake_case，动词_名词</td><td><code>search_products</code>, <code>get_stock_price</code></td></tr>
+  <tr><td>Schema 字段名</td><td>camelCase</td><td><code>fromAccount</code>, <code>maxPrice</code></td></tr>
+  <tr><td>错误码</td><td>UPPER_SNAKE</td><td><code>INSUFFICIENT_BALANCE</code></td></tr>
+</table>
+
+<h2>常见陷阱</h2>
+<ol>
+  <li><strong>忘记 optional</strong> — 非必填字段不加 <code>.optional()</code>，LLM 编造数据</li>
+  <li><strong>抛异常而非返回错误</strong> — 异常丢失上下文，LLM 无法推理</li>
+  <li><strong>返回裸字符串而非 JSON</strong> — LLM 难以解析非结构化文本</li>
+  <li><strong>描述太短</strong> — "获取数据" 无法帮助 LLM 判断何时使用</li>
+  <li><strong>工具粒度太粗</strong> — 一个工具做三件事，LLM 难以准确调用</li>
+</ol>
+
+<hr style="margin:2rem 0 1rem;">
+<p style="color:var(--muted); font-size:0.85rem;">
+  📎 <a href="../lessons/03-tool-design.html">Lesson 0003 工具设计模式</a> ·
+  <a href="../GLOSSARY.md">术语表</a>
+</p>
+
+</body>
+</html>

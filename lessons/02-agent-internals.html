@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 02 — Agent 内部机制：决策循环、消息与流式输出</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>Lesson 02: Agent 内部机制</h1>
+
+<div class="lesson-meta">
+  <span>📅 2025-07-09</span>
+  <span>⏱ ~25 分钟</span>
+  <span>🎯 理解 ReAct 循环、消息类型、流式输出</span>
+  <span>📎 课前要求: <a href="01-first-agent.html">Lesson 0001</a></span>
+</div>
+
+<h2>你将要学会的</h2>
+<ol>
+  <li><strong>ReAct 决策循环</strong> — Agent 在每一步到底做了什么</li>
+  <li><strong>四种消息类型</strong> — system / human / ai / tool 各自的作用</li>
+  <li><strong>流式输出 vs 一次性调用</strong> — <code>stream()</code> 和 <code>invoke()</code> 的区别与选择</li>
+  <li><strong>System Prompt</strong> — 用系统消息控制 Agent 的行为边界</li>
+</ol>
+
+<h2>先跑代码</h2>
+
+<pre><code>cd learn-langchain
+npx tsx 02-stream-demo.ts</code></pre>
+
+<p>你会看到 Agent 每一步推理的实时输出——包括一次工具调用失败后的自动修正。</p>
+
+<h2>核心概念：ReAct 决策循环</h2>
+
+<p>第一课你看到了 Agent 自动选择了工具并给出答案。但中间发生了什么？答案是 <strong>ReAct</strong>（Reasoning + Acting）——Agent 在一个循环中交替进行"思考"和"行动"。</p>
+
+<div style="background:var(--code-bg); padding:1.2rem; border-radius:var(--radius); margin-bottom:1.2rem;">
+<pre style="margin:0; border:none; padding:0; background:none;">
+┌─────────────────────────────────────────────────────┐
+│                  ReAct Agent Loop                    │
+│                                                      │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐       │
+│  │  THINK   │───▶│   ACT    │───▶│ OBSERVE  │       │
+│  │ (model)  │    │ (tools)  │    │ (result) │       │
+│  └──────────┘    └──────────┘    └──────────┘       │
+│       ▲                              │               │
+│       │        还需要更多信息?        │               │
+│       └──────────────────────────────┘               │
+│                      │                               │
+│              任务完成? ▼                              │
+│              ┌──────────┐                            │
+│              │  ANSWER  │  ← 最终回复                │
+│              └──────────┘                            │
+└─────────────────────────────────────────────────────┘</pre>
+</div>
+
+<ol>
+  <li><strong>Think（模型请求）</strong> — LLM 分析当前状态，决定回答还是调用工具</li>
+  <li><strong>Act（工具执行）</strong> — 框架执行 LLM 请求的工具调用</li>
+  <li><strong>Observe（观察结果）</strong> — 工具结果被追加到消息历史，LLM 下一轮看到它们</li>
+  <li><strong>Answer 或继续循环</strong> — 如果信息够了直接回复，否则回到步骤 1</li>
+</ol>
+
+<div class="callout tip">
+<strong>关键洞察：</strong>Agent 的每一步推理都是<strong>纯文本消息的追加</strong>——Think 追加一条 ai 消息，Act 追加一条 tool 消息，下一轮 Think 看到完整的对话历史再做决策。这个简单机制解释了 Agent 所有的"智能"行为。
+</div>
+
+<h2>四种消息类型</h2>
+
+<table style="width:100%; border-collapse:collapse; margin-bottom:1.2rem;">
+  <thead>
+    <tr style="border-bottom:2px solid var(--border); text-align:left;">
+      <th style="padding:0.5rem 0.75rem;">类型</th>
+      <th style="padding:0.5rem 0.75rem;">发送者</th>
+      <th style="padding:0.5rem 0.75rem;">作用</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:0.5rem 0.75rem;"><code>system</code></td>
+      <td style="padding:0.5rem 0.75rem;">开发者</td>
+      <td style="padding:0.5rem 0.75rem;">设定 Agent 的行为边界、角色、规则</td>
+    </tr>
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:0.5rem 0.75rem;"><code>human</code></td>
+      <td style="padding:0.5rem 0.75rem;">用户</td>
+      <td style="padding:0.5rem 0.75rem;">用户的问题或指令</td>
+    </tr>
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:0.5rem 0.75rem;"><code>ai</code></td>
+      <td style="padding:0.5rem 0.75rem;">LLM</td>
+      <td style="padding:0.5rem 0.75rem;">模型的输出：文本回复 或 工具调用请求</td>
+    </tr>
+    <tr>
+      <td style="padding:0.5rem 0.75rem;"><code>tool</code></td>
+      <td style="padding:0.5rem 0.75rem;">框架</td>
+      <td style="padding:0.5rem 0.75rem;">工具执行后的返回值，被注入回对话历史</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>消息如何推动循环 — 真实例子</h3>
+
+<pre><code>[0] system  | 你是一个总是先算一遍再确认的助手。用中文回复。
+[1] human   | 1 + 1 等于几？
+[2] ai      | 我先算一下。1 + 1 = 2 让我用计算器确认一下。 [tool_calls: calculator]
+[3] tool    | {"expression":"1 + 1","result":2}
+[4] ai      | 确认计算结果为 2。所以，1 + 1 等于 2。✅</code></pre>
+
+<h2>stream() vs invoke()</h2>
+
+<table style="width:100%; border-collapse:collapse; margin-bottom:1.2rem;">
+  <thead>
+    <tr style="border-bottom:2px solid var(--border); text-align:left;">
+      <th style="padding:0.5rem 0.75rem;"></th>
+      <th style="padding:0.5rem 0.75rem;"><code>invoke()</code></th>
+      <th style="padding:0.5rem 0.75rem;"><code>stream()</code></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:0.5rem 0.75rem;"><strong>返回值</strong></td>
+      <td style="padding:0.5rem 0.75rem;">最终结果（完整的消息数组）</td>
+      <td style="padding:0.5rem 0.75rem;">AsyncIterable，每个 chunk 是循环中的一个步骤</td>
+    </tr>
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:0.5rem 0.75rem;"><strong>chunk 结构</strong></td>
+      <td style="padding:0.5rem 0.75rem;">N/A</td>
+      <td style="padding:0.5rem 0.75rem;"><code>{ model_request: {...} }</code> 或 <code>{ tools: {...} }</code></td>
+    </tr>
+    <tr>
+      <td style="padding:0.5rem 0.75rem;"><strong>适用场景</strong></td>
+      <td style="padding:0.5rem 0.75rem;">API 调用、批处理、只需要最终答案</td>
+      <td style="padding:0.5rem 0.75rem;">聊天 UI、调试、需要实时反馈的交互</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>System Prompt：控制 Agent 的行为</h2>
+
+<pre><code>const result = await agent.invoke({
+  messages: [
+    { role: "system", content: "你是一个严谨的数学助手。每次计算都必须用 calculator 工具验证。" },
+    { role: "user", content: "1 + 1 等于几？" },
+  ],
+});</code></pre>
+
+<p>System prompt 最佳实践：角色设定、工具使用规则、输出格式、语言 & 长度限制。</p>
+
+<h2>Agent 的错误恢复能力</h2>
+
+<p>在 <code>02-stream-demo.ts</code> 的输出中，你会看到 Agent 调用 calculator 时出错了（LLM 编造了一个不存在的 <code>round</code> 函数），但它<strong>自动检测错误并重新调用</strong>——这就是 ReAct 闭环控制的价值。</p>
+
+<h2>知识检查</h2>
+
+<div class="quiz" id="q1">
+  <div class="question">1. 在 ReAct 循环中，model_request chunk 后紧跟的是什么类型的 chunk？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 另一个 model_request，形成递归推理</div>
+    <div class="option" data-value="b">B. tools chunk（如果 Agent 请求了工具调用），否则循环结束</div>
+    <div class="option" data-value="c">C. 一个 HTTP 请求发送到 LangSmith 进行追踪</div>
+    <div class="option" data-value="d">D. 一个 system chunk 用来更新 Agent 的行为规则</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q2">
+  <div class="question">2. 什么类型的消息用来设定 Agent 的行为规则，并且在对话中不会被工具调用打断？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. human 消息——用户的要求就是最高规则</div>
+    <div class="option" data-value="b">B. tool 消息——工具的返回值定义了可用操作</div>
+    <div class="option" data-value="c">C. system 消息——在对话开始时注入，持续影响 LLM 的行为</div>
+    <div class="option" data-value="d">D. ai 消息——Agent 自己给自己设定规则</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q3">
+  <div class="question">3. 下列哪个场景最适合用 stream() 而不是 invoke()？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 一个夜间批处理任务，需要处理 10000 条数据</div>
+    <div class="option" data-value="b">B. 一个需要向用户实时展示 Agent 推理步骤的聊天界面</div>
+    <div class="option" data-value="c">C. 一个微服务 API，只需要返回最终的计算结果</div>
+    <div class="option" data-value="d">D. 一个单元测试，验证 Agent 的最终输出是否正确</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<script>
+(function() {
+  const answers = {
+    q1: { correct: "b", explanation: "正确！当 Agent 决定调用工具时，下一个 chunk 是 <code>tools</code>（包含工具执行结果）。如果 Agent 认为信息足够了，则循环结束。这就是 model_request → tools → model_request → ... 的交替模式。" },
+    q2: { correct: "c", explanation: "正确！<code>system</code> 消息在对话开始时就注入，在整个对话历史中位于最上方。它不会被工具调用替换或移除。" },
+    q3: { correct: "b", explanation: "正确！<code>stream()</code> 的核心价值是逐步展示推理过程，减少用户等待时的焦虑感。对于批处理、API、测试等场景，<code>invoke()</code> 更简洁高效。" }
+  };
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const info = answers[quiz.id];
+    const options = quiz.querySelectorAll('.option');
+    const feedback = quiz.querySelector('.feedback');
+    options.forEach(opt => {
+      opt.addEventListener('click', () => {
+        if (opt.classList.contains('correct') || opt.classList.contains('incorrect')) return;
+        options.forEach(o => { o.classList.remove('selected', 'correct', 'incorrect'); });
+        opt.classList.add('selected');
+        if (opt.dataset.value === info.correct) {
+          opt.classList.add('correct');
+          feedback.className = 'feedback correct show';
+        } else {
+          opt.classList.add('incorrect');
+          feedback.className = 'feedback incorrect show';
+          options.forEach(o => { if (o.dataset.value === info.correct) o.classList.add('correct'); });
+        }
+        feedback.innerHTML = info.explanation;
+      });
+    });
+  });
+})();
+</script>
+
+<h2>本课推荐阅读</h2>
+<ul>
+  <li><a href="https://docs.langchain.com/oss/javascript/langchain/learn">LangChain.js 官方 Learn 文档 — Agents 章节</a></li>
+  <li><a href="https://github.com/microsoft/langchainjs-for-beginners/blob/main/03-prompts-messages-outputs/README.md">Microsoft 课程第 3 课: Prompts, Messages & Outputs</a></li>
+</ul>
+
+<div class="callout tip">
+<strong>有问题？</strong> Agent 内部机制是面试高频问题，值得彻底搞懂。直接问我。
+</div>
+
+<hr style="margin:2rem 0 1rem; border:none; border-top:1px solid var(--border);">
+
+<div class="lesson-nav">
+  <a href="01-first-agent.html">← 上一课: 0001</a>
+  <a href="03-tool-design.html">下一课 → 0003: 工具设计模式</a>
+</div>
+
+</body>
+</html>

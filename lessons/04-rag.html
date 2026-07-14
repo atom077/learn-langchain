@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 04 — RAG 检索增强生成：让 Agent 读取你的知识库</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>Lesson 04: RAG 检索增强生成</h1>
+
+<div class="lesson-meta">
+  <span>📅 2025-07-13</span>
+  <span>⏱ ~25 分钟</span>
+  <span>🎯 让 Agent 基于外部知识回答</span>
+  <span>📎 课前要求: <a href="03-tool-design.html">Lesson 0003</a></span>
+</div>
+
+<h2>你将要学会的</h2>
+<ol>
+  <li><strong>RAG 的本质</strong> — 不是魔法，是"先搜后答"的工程模式</li>
+  <li><strong>Agent + RAG 的现代范式</strong> — 用工具包装检索，而非独立的 Chain</li>
+  <li><strong>三种检索策略</strong> — 关键词、向量语义、混合搜索</li>
+  <li><strong>如何处理"查不到"</strong> — 让 Agent 承认不知道，而非编造</li>
+</ol>
+
+<h2>先跑代码</h2>
+
+<pre><code>cd learn-langchain
+npx tsx 04-rag-demo.ts</code></pre>
+
+<p>四个问题：年假计算、远程办公限制、出差标准、以及一个知识库中没有的"健身房"问题。</p>
+
+<h2>什么是 RAG？</h2>
+
+<p>RAG（Retrieval-Augmented Generation）解决 LLM 的两个根本缺陷：</p>
+
+<table style="width:100%; border-collapse:collapse; margin-bottom:1.2rem;">
+  <tr style="border-bottom:2px solid var(--border); text-align:left;">
+    <th style="padding:0.5rem 0.75rem;">LLM 的缺陷</th>
+    <th style="padding:0.5rem 0.75rem;">没有 RAG</th>
+    <th style="padding:0.5rem 0.75rem;">有 RAG</th>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>幻觉</strong></td>
+    <td style="padding:0.5rem 0.75rem;">编造不存在的政策、数据、事实</td>
+    <td style="padding:0.5rem 0.75rem;">所有回答基于检索到的真实文档</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>知识截止</strong></td>
+    <td style="padding:0.5rem 0.75rem;">不知道训练截止日期之后的内容</td>
+    <td style="padding:0.5rem 0.75rem;">搜索最新文档，实时获取新知识</td>
+  </tr>
+  <tr>
+    <td style="padding:0.5rem 0.75rem;"><strong>私有知识盲区</strong></td>
+    <td style="padding:0.5rem 0.75rem;">不知道你的公司政策、产品文档</td>
+    <td style="padding:0.5rem 0.75rem;">读取你的专属文档并给出精确答案</td>
+  </tr>
+</table>
+
+<div class="callout">
+<strong>RAG = 检索 + 生成。</strong>先搜到相关文档，再把文档内容塞进 prompt，让 LLM 基于这些内容回答。本质上就是"开卷考试"。
+</div>
+
+<h2>经典 Chain RAG vs Agent RAG</h2>
+
+<h3>范式 1: 经典 Chain（老方式）</h3>
+<pre><code>// 固定管道: embed → store → retrieve → generate
+const chain = createRetrievalChain({ retriever, llm });</code></pre>
+
+<h3>范式 2: Agent RAG（✅ 你学的方式）</h3>
+<pre><code>// 检索就是一个 tool — Agent 自主决定何时搜索、搜什么
+const searchKB = tool(
+  ({ query }) => { /* 搜索逻辑 */ },
+  { name: "search_knowledge_base" }
+);
+const agent = createAgent({ model, tools: [searchKB] });</code></pre>
+
+<div class="callout tip">
+<strong>为什么 Agent RAG 更好？</strong>Agent 可以自主决定：是否需要搜索、搜索什么关键词、搜不到时要不要换关键词重搜、结果不足时要不要追问用户。固定 Chain 做不到这些。
+</div>
+
+<h2>三种检索策略</h2>
+
+<table style="width:100%; border-collapse:collapse; margin-bottom:1.2rem;">
+  <tr style="border-bottom:2px solid var(--border); text-align:left;">
+    <th style="padding:0.5rem 0.75rem;">策略</th>
+    <th style="padding:0.5rem 0.75rem;">原理</th>
+    <th style="padding:0.5rem 0.75rem;">适合</th>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>关键词匹配</strong></td>
+    <td style="padding:0.5rem 0.75rem;">分词 → 统计匹配次数 → 排序</td>
+    <td style="padding:0.5rem 0.75rem;">小规模（&lt;1000 篇）、主题集中</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>向量语义搜索</strong></td>
+    <td style="padding:0.5rem 0.75rem;">文本 → Embedding → 余弦相似度 → Top-K</td>
+    <td style="padding:0.5rem 0.75rem;">大规模、需要语义理解</td>
+  </tr>
+  <tr>
+    <td style="padding:0.5rem 0.75rem;"><strong>混合搜索</strong></td>
+    <td style="padding:0.5rem 0.75rem;">关键词 + 向量双路检索 → 融合排序</td>
+    <td style="padding:0.5rem 0.75rem;">生产环境最佳实践</td>
+  </tr>
+</table>
+
+<h2>防幻觉：System Prompt 约束</h2>
+
+<pre><code>{
+  role: "system",
+  content:
+    "所有答案必须基于知识库搜索结果，不要编造。" +
+    "如果搜索结果中没有相关信息，诚实告知。"
+}</code></pre>
+
+<p>你的 <code>04-rag-demo.ts</code> 第四个问题（"公司有健身房吗？"）正好验证了这一点——Agent 诚实地说"找不到"。</p>
+
+<h2>动手实践</h2>
+<p>你已经在 <code>04-rag-demo.ts</code> 中添加了第 7 条文档（健康福利政策）。重新跑 <code>npx tsx 04-rag-demo.ts</code>，再问一遍"健身房"——这次 Agent 能找到企业合作的 SuperFit 健身房了。</p>
+
+<div class="callout tip">
+<strong>这就是 RAG 的核心价值：</strong>更新知识库 = 更新 Agent 的知识。不用重新训练模型，只加一条文档，Agent 就能回答新问题。
+</div>
+
+<h2>知识检查</h2>
+
+<div class="quiz" id="q1">
+  <div class="question">1. Agent RAG 相比经典 Chain RAG 的核心优势是什么？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 搜索速度更快，因为使用了更高效的索引结构</div>
+    <div class="option" data-value="b">B. Agent 能自主决定是否搜索、搜什么、搜不到时怎么调整策略</div>
+    <div class="option" data-value="c">C. 向量搜索的精度更高，因为 Agent 可以压缩 embedding 维度</div>
+    <div class="option" data-value="d">D. 不需要文档预处理，可以直接搜索任意格式的文件</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q2">
+  <div class="question">2. 为什么 system prompt 中要加"如果搜索无结果，诚实告知"？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 让 Agent 的回复看起来更礼貌、更专业</div>
+    <div class="option" data-value="b">B. 防止 Agent 在检索无结果时凭模型自身知识编造答案（幻觉）</div>
+    <div class="option" data-value="c">C. 减少 API 调用次数，节省 token 成本</div>
+    <div class="option" data-value="d">D. 让 Agent 自动触发知识库的重新索引</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q3">
+  <div class="question">3. 从关键词搜索升级到向量语义搜索，解决了什么根本问题？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 搜索速度 — 向量搜索比字符串匹配快 10 倍以上</div>
+    <div class="option" data-value="b">B. 语义理解 — "远程工作" 和 "work from home" 能匹配到同一篇文档</div>
+    <div class="option" data-value="c">C. 存储空间 — 向量压缩后文档占用空间减少 90%</div>
+    <div class="option" data-value="d">D. API 成本 — embedding API 比关键词搜索 API 便宜</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<script>
+(function() {
+  const answers = {
+    q1: { correct: "b", explanation: "正确！Agent RAG 把检索当作一个 tool，Agent 可以自主决定是否搜索、搜什么关键词、搜不到时如何处理。" },
+    q2: { correct: "b", explanation: "正确！LLM 的本能是'总想给出一个答案'——即使它不知道。不加这个约束，当检索结果为空时 LLM 可能编造。明确禁止后 Agent 会选择诚实告知。" },
+    q3: { correct: "b", explanation: "正确！关键词搜索只能字面匹配。向量搜索通过 embedding 捕捉语义相似性——含义相近但用词不同的文本会有相近的向量。" }
+  };
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const info = answers[quiz.id];
+    const options = quiz.querySelectorAll('.option');
+    const feedback = quiz.querySelector('.feedback');
+    options.forEach(opt => {
+      opt.addEventListener('click', () => {
+        if (opt.classList.contains('correct') || opt.classList.contains('incorrect')) return;
+        options.forEach(o => { o.classList.remove('selected', 'correct', 'incorrect'); });
+        opt.classList.add('selected');
+        if (opt.dataset.value === info.correct) {
+          opt.classList.add('correct');
+          feedback.className = 'feedback correct show';
+        } else {
+          opt.classList.add('incorrect');
+          feedback.className = 'feedback incorrect show';
+          options.forEach(o => { if (o.dataset.value === info.correct) o.classList.add('correct'); });
+        }
+        feedback.innerHTML = info.explanation;
+      });
+    });
+  });
+})();
+</script>
+
+<h2>推荐阅读</h2>
+<ul>
+  <li><a href="https://docs.langchain.com/oss/javascript/langchain/learn">LangChain.js 官方 Learn — RAG 章节</a></li>
+  <li><a href="https://github.com/microsoft/langchainjs-for-beginners/blob/main/08-agentic-rag/README.md">Microsoft 课程第 8 课: Agentic RAG</a></li>
+  <li><a href="tool-design-reference.html">工具设计参考卡片</a></li>
+</ul>
+
+<div class="callout tip"><strong>有问题？</strong> RAG 的深度很足，随时深入探讨。</div>
+
+<hr style="margin:2rem 0 1rem; border:none; border-top:1px solid var(--border);">
+
+<div class="lesson-nav">
+  <a href="03-tool-design.html">← 上一课: 0003</a>
+  <a href="05-memory.html">下一课 → 0005: Memory</a>
+</div>
+
+</body>
+</html>

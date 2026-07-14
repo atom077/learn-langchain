@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 01 — LangChain.js 是什么？构建你的第一个 Agent</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>Lesson 01: LangChain.js 是什么？</h1>
+
+<div class="lesson-meta">
+  <span>📅 2025-07-09</span>
+  <span>⏱ ~20 分钟</span>
+  <span>🎯 构建第一个 Agent</span>
+</div>
+
+<h2>你将要学会的</h2>
+<ol>
+  <li>理解 LangChain.js 是什么、解决什么问题</li>
+  <li>了解 <strong>Agent-first</strong> 的现代架构设计</li>
+  <li>写出并运行你的第一个 LangChain.js Agent（< 20 行代码）</li>
+</ol>
+
+<h2>LangChain.js 是什么？</h2>
+
+<p>
+LangChain.js 是一个 <strong>Agent 工程平台</strong>，用于构建由大语言模型（LLM）驱动的应用。
+它不是另一个 "prompt 包装器"——它的核心价值在于让 LLM 能够<strong>调用工具、访问外部数据、执行多步推理</strong>。
+</p>
+
+<div class="callout">
+<strong>一句话总结：</strong>LangChain.js = 给 LLM 装上"手"和"脚"，让它不再是只会聊天的盒子，而是能干活、查数据、调用 API 的智能体。
+</div>
+
+<h3>它解决的核心问题</h3>
+
+<table style="width:100%; border-collapse:collapse; margin-bottom:1rem;">
+  <thead>
+    <tr style="border-bottom:2px solid var(--border); text-align:left;">
+      <th style="padding:0.5rem 0.75rem;">问题</th>
+      <th style="padding:0.5rem 0.75rem;">没有 LangChain.js</th>
+      <th style="padding:0.5rem 0.75rem;">有 LangChain.js</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:0.5rem 0.75rem;"><strong>工具调用</strong></td>
+      <td style="padding:0.5rem 0.75rem;">手动解析 JSON、写 switch-case</td>
+      <td style="padding:0.5rem 0.75rem;"><code>tool()</code> 声明式定义，框架自动处理</td>
+    </tr>
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:0.5rem 0.75rem;"><strong>对话记忆</strong></td>
+      <td style="padding:0.5rem 0.75rem;">手动管理消息数组、截断逻辑</td>
+      <td style="padding:0.5rem 0.75rem;">内置 Memory 模块，多种策略即插即用</td>
+    </tr>
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:0.5rem 0.75rem;"><strong>RAG（检索增强生成）</strong></td>
+      <td style="padding:0.5rem 0.75rem;">独立拼接 embedding + 向量搜索 + prompt</td>
+      <td style="padding:0.5rem 0.75rem;">统一的 VectorStore 抽象 + 内置 RAG chain</td>
+    </tr>
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:0.5rem 0.75rem;"><strong>多步推理</strong></td>
+      <td style="padding:0.5rem 0.75rem;">自己实现 ReAct/规划循环</td>
+      <td style="padding:0.5rem 0.75rem;"><code>createAgent()</code> 开箱即用</td>
+    </tr>
+    <tr>
+      <td style="padding:0.5rem 0.75rem;"><strong>可观测性</strong></td>
+      <td style="padding:0.5rem 0.75rem;">console.log 大法</td>
+      <td style="padding:0.5rem 0.75rem;">LangSmith 追踪每一步推理</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>现代架构：Agent-First</h2>
+
+<p>从 2025 年起，LangChain.js 转向了 <strong>Agent-first</strong> 设计。核心 API 只有两个关键函数：</p>
+
+<pre><code>import { createAgent, tool } from "langchain";
+import { z } from "zod";
+
+// 1️⃣ 用 tool() 定义工具 — LLM 可以调用的函数
+const getWeather = tool(
+  ({ city }) => `It's always sunny in ${city}!`,
+  {
+    name: "get_weather",
+    description: "获取指定城市的天气",
+    schema: z.object({ city: z.string() }),
+  }
+);
+
+// 2️⃣ 用 createAgent() 创建一个 Agent — 把 LLM + 工具组合在一起
+const agent = createAgent({
+  model: "anthropic:claude-sonnet-4-6",
+  tools: [getWeather],
+});
+
+// 3️⃣ 调用！
+const result = await agent.invoke({
+  messages: [{ role: "user", content: "东京天气怎么样？" }],
+});</code></pre>
+
+<div class="callout tip">
+<strong>关键洞察：</strong>整个架构围绕两个抽象旋转——<code>createAgent</code>（决策循环）和 <code>tool</code>（可调用的能力）。其他一切（memory、RAG、streaming）都是这两个抽象的增强。
+</div>
+
+<h2>动手实践：你的第一个 Agent（已在你的项目中）</h2>
+
+<p>你的 <code>learn-langchain/01-first-agent.ts</code> 中已经有这个 Agent——用 DeepSeek 驱动，具备数学计算和获取时间两个工具。</p>
+
+<pre><code>cd learn-langchain
+npm start</code></pre>
+
+<h2>知识检查</h2>
+
+<div class="quiz" id="q1">
+  <div class="question">1. <code>createAgent()</code> 的核心作用是什么？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 创建一个 HTTP 服务器来托管 LLM API</div>
+    <div class="option" data-value="b">B. 将 LLM 和工具组合在一起，形成能多步推理的智能体</div>
+    <div class="option" data-value="c">C. 创建一个向量数据库来存储 embedding</div>
+    <div class="option" data-value="d">D. 把 prompt 模板编译成高效的二进制格式</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q2">
+  <div class="question">2. <code>tool()</code> 的 <code>schema</code> 参数用什么库来定义？它的作用是什么？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. Joi — 用于验证 Agent 的输出</div>
+    <div class="option" data-value="b">B. Yup — 用于定义 HTTP 路由的参数</div>
+    <div class="option" data-value="c">C. Zod — 用于描述工具的输入结构，让 LLM 知道如何调用</div>
+    <div class="option" data-value="d">D. TypeScript interface — 用于编译时类型检查</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q3">
+  <div class="question">3. 下列哪个<strong>不是</strong> LangChain.js 解决的核心问题？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 工具调用（让 LLM 调用外部函数）</div>
+    <div class="option" data-value="b">B. 大模型的预训练和微调</div>
+    <div class="option" data-value="c">C. 对话记忆管理</div>
+    <div class="option" data-value="d">D. 多步推理循环（ReAct）</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<script>
+(function() {
+  const answers = {
+    q1: { correct: "b", explanation: "正确！<code>createAgent()</code> 把 LLM（大脑）+ tools（能力）组合在一起，让 Agent 能够在思考-行动-观察的循环中完成复杂任务。" },
+    q2: { correct: "c", explanation: "正确！<code>tool()</code> 使用 Zod schema 描述工具的输入参数。LangChain.js 会将 schema 转换为 LLM 能理解的 function calling 格式。" },
+    q3: { correct: "b", explanation: "正确！LangChain.js 是应用层框架，不涉及模型预训练或微调。模型本身的训练是 OpenAI、Anthropic 等模型提供商的事。" }
+  };
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const info = answers[quiz.id];
+    const options = quiz.querySelectorAll('.option');
+    const feedback = quiz.querySelector('.feedback');
+    options.forEach(opt => {
+      opt.addEventListener('click', () => {
+        if (opt.classList.contains('correct') || opt.classList.contains('incorrect')) return;
+        options.forEach(o => { o.classList.remove('selected', 'correct', 'incorrect'); });
+        opt.classList.add('selected');
+        if (opt.dataset.value === info.correct) {
+          opt.classList.add('correct');
+          feedback.className = 'feedback correct show';
+        } else {
+          opt.classList.add('incorrect');
+          feedback.className = 'feedback incorrect show';
+          options.forEach(o => { if (o.dataset.value === info.correct) o.classList.add('correct'); });
+        }
+        feedback.innerHTML = info.explanation;
+      });
+    });
+  });
+})();
+</script>
+
+<h2>本课推荐阅读</h2>
+<ul>
+  <li><a href="https://docs.langchain.com/oss/javascript/langchain/overview">LangChain.js 官方 Overview</a></li>
+  <li><a href="https://github.com/microsoft/langchainjs-for-beginners">Microsoft: LangChain.js for Beginners</a></li>
+</ul>
+
+<div class="callout tip">
+<strong>有问题？</strong> 随时向教学 Agent 追问任何细节——无论是对 <code>tool()</code> 的 schema 定义、<code>createAgent()</code> 的内部机制、还是对 Agent 决策循环的困惑。我就是你的私教。
+</div>
+
+<hr style="margin:2rem 0 1rem; border:none; border-top:1px solid var(--border);">
+
+<div class="lesson-nav">
+  <span></span>
+  <a href="02-agent-internals.html">下一课 → 0002: Agent 内部机制</a>
+</div>
+
+</body>
+</html>

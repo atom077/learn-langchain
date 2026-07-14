@@ -1,0 +1,111 @@
+/* Shared stylesheet for LangChain.js lessons — Tufte-inspired */
+:root {
+  --bg: #fffff8;
+  --text: #111;
+  --muted: #666;
+  --accent: #1a56db;
+  --code-bg: #f4f4f0;
+  --border: #ddd;
+  --highlight: #fff8c4;
+  --radius: 4px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  font-size: 18px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family: "Palatino", "Palatino Linotype", "Georgia", serif;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 6rem;
+  color: var(--text);
+  background: var(--bg);
+}
+
+h1 { font-size: 2.2rem; margin-bottom: 0.25rem; font-weight: 700; line-height: 1.2; }
+h2 { font-size: 1.4rem; margin: 2.5rem 0 0.75rem; font-weight: 600; }
+h3 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; font-weight: 600; font-style: italic; }
+
+p { margin-bottom: 1rem; }
+
+a { color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+a:hover { border-bottom-color: var(--accent); }
+
+code, pre {
+  font-family: "JetBrains Mono", "Fira Code", "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 0.82rem;
+}
+
+code {
+  background: var(--code-bg);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
+
+pre {
+  background: var(--code-bg);
+  padding: 1rem 1.2rem;
+  border-radius: var(--radius);
+  overflow-x: auto;
+  margin-bottom: 1.2rem;
+  line-height: 1.5;
+  border-left: 3px solid var(--accent);
+}
+
+pre code { background: none; padding: 0; }
+
+.callout {
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  font-size: 0.95rem;
+}
+.callout.warn {
+  border-left-color: #d97706;
+  background: color-mix(in srgb, #d97706 8%, transparent);
+}
+.callout.tip {
+  border-left-color: #059669;
+  background: color-mix(in srgb, #059669 8%, transparent);
+}
+
+.quiz { margin: 1.5rem 0; }
+.quiz .question { font-weight: 600; margin-bottom: 0.75rem; }
+.quiz .options { display: flex; flex-direction: column; gap: 0.4rem; }
+.quiz .option { padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; transition: background 0.15s; }
+.quiz .option:hover { background: var(--code-bg); }
+.quiz .option.selected { background: var(--highlight); border-color: #d4a017; }
+.quiz .option.correct { background: #d4edda; border-color: #28a745; }
+.quiz .option.incorrect { background: #f8d7da; border-color: #dc3545; }
+.quiz .feedback { margin-top: 0.75rem; padding: 0.5rem 0.75rem; border-radius: var(--radius); display: none; font-size: 0.9rem; }
+.quiz .feedback.show { display: block; }
+.quiz .feedback.correct { background: #d4edda; color: #155724; }
+.quiz .feedback.incorrect { background: #f8d7da; color: #721c24; }
+.quiz button { margin-top: 0.75rem; padding: 0.4rem 1rem; background: var(--accent); color: #fff; border: none; border-radius: var(--radius); cursor: pointer; font-size: 0.9rem; }
+
+.lesson-nav {
+  margin-top: 4rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.lesson-meta { color: var(--muted); font-size: 0.85rem; margin-bottom: 2rem; }
+.lesson-meta span { margin-right: 1.5rem; }
+
+@media print {
+  body { font-size: 12pt; max-width: 100%; padding: 0; }
+  pre { border-left: 1px solid #000; }
+  .quiz { break-inside: avoid; }
+  .lesson-nav { display: none; }
+}

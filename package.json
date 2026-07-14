@@ -1,0 +1,31 @@
+{
+  "name": "learn-langchain",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "tsx 01-first-agent.ts",
+    "demo:01": "tsx 01-first-agent.ts",
+    "demo:02": "tsx 02-stream-demo.ts",
+    "demo:03": "tsx 03-tool-design-demo.ts",
+    "demo:04": "tsx 04-rag-demo.ts",
+    "demo:05": "tsx 05-memory-demo.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@langchain/anthropic": "^1.0.0",
+    "@langchain/core": "^1.0.0",
+    "@langchain/openai": "^1.5.4",
+    "dotenv": "^16.4.7",
+    "langchain": "^1.0.0",
+    "zod": "^3.24.0",
+    "zod-to-json-schema": "^3.25.2"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

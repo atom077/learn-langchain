@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 03 — 工具设计模式：Schema、错误与异步</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>Lesson 03: 工具设计模式</h1>
+
+<div class="lesson-meta">
+  <span>📅 2025-07-13</span>
+  <span>⏱ ~25 分钟</span>
+  <span>🎯 设计健壮、可复用的工具</span>
+  <span>📎 课前要求: <a href="02-agent-internals.html">Lesson 0002</a></span>
+</div>
+
+<h2>你将要学会的</h2>
+<ol>
+  <li><strong>复杂 Zod Schema</strong> — 嵌套对象、枚举、可选字段，让 LLM 精确传参</li>
+  <li><strong>结构化错误</strong> — 不抛异常，返回错误对象让 Agent 自动修正</li>
+  <li><strong>异步工具</strong> — 调用外部 API、数据库，不阻塞 Agent 循环</li>
+  <li><strong>工具描述的黄金法则</strong> — 写好 description，减少 80% 的调用错误</li>
+</ol>
+
+<h2>先跑代码</h2>
+
+<pre><code>cd learn-langchain
+npx tsx 03-tool-design-demo.ts</code></pre>
+
+<p>三个测试场景：产品搜索（复杂过滤+排序）、银行转账（余额不足错误恢复）、股票查询（异步 API）。</p>
+
+<h2>模式 1: 复杂 Schema = 精确的参数控制</h2>
+
+<pre><code>const searchProducts = tool(
+  async ({ query, filters }) => { /* ... */ },
+  {
+    name: "search_products",
+    description: "搜索产品。支持关键词、分类过滤、价格范围、库存过滤和排序。",
+    schema: z.object({
+      query: z.string().describe("搜索关键词"),
+      filters: z.object({                          // ← 嵌套对象
+        category: z.enum(["book", "electronics"])
+                   .describe("产品分类").optional(),
+        minPrice: z.number().min(0)
+                   .describe("最低价格").optional(),
+        maxPrice: z.number().min(0)
+                   .describe("最高价格").optional(),
+        inStockOnly: z.boolean()
+                   .describe("只返回有库存").optional(),
+        sortBy: z.enum(["price_asc", "price_desc"])
+                   .describe("排序方式").optional(),
+      }).describe("过滤选项").optional(),
+    }),
+  }
+);</code></pre>
+
+<div class="callout tip">
+<strong>每个字段都用 <code>.describe()</code></strong>——这不是注释，是给 LLM 看的参数说明书。Zod schema 被编译为 function calling 的 JSON Schema，LLM 据此决定如何填参数。
+</div>
+
+<h3>Schema 设计四要素</h3>
+
+<table style="width:100%; border-collapse:collapse; margin-bottom:1.2rem;">
+  <tr style="border-bottom:2px solid var(--border); text-align:left;">
+    <th style="padding:0.5rem 0.75rem;">要素</th>
+    <th style="padding:0.5rem 0.75rem;">Zod 写法</th>
+    <th style="padding:0.5rem 0.75rem;">为什么重要</th>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>类型约束</strong></td>
+    <td style="padding:0.5rem 0.75rem;"><code>z.string()</code>, <code>z.number()</code></td>
+    <td style="padding:0.5rem 0.75rem;">防止 LLM 传错类型</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>值域约束</strong></td>
+    <td style="padding:0.5rem 0.75rem;"><code>.enum([...])</code>, <code>.min(0)</code></td>
+    <td style="padding:0.5rem 0.75rem;">限制可选值，防止 LLM 编造</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>可选性</strong></td>
+    <td style="padding:0.5rem 0.75rem;"><code>.optional()</code></td>
+    <td style="padding:0.5rem 0.75rem;">非必填字段用 optional，减少噪声</td>
+  </tr>
+  <tr>
+    <td style="padding:0.5rem 0.75rem;"><strong>描述</strong></td>
+    <td style="padding:0.5rem 0.75rem;"><code>.describe("...")</code></td>
+    <td style="padding:0.5rem 0.75rem;">LLM 的"参数说明书"，最关键</td>
+  </tr>
+</table>
+
+<h2>模式 2: 结构化错误 — 不要抛异常</h2>
+
+<pre><code>// ❌ 不好的做法
+if (balance < amount) throw new Error("余额不足");
+
+// ✅ 好的做法：返回结构化错误对象
+if (balance < amount) {
+  return JSON.stringify({
+    success: false,
+    error: "INSUFFICIENT_BALANCE",         // 机器可读错误码
+    message: `余额不足。当前: ¥${balance}，需要: ¥${amount}`,
+    currentBalance: balance,                // 具体数据供 LLM 引用
+    shortfall: amount - balance,            // 差额供 LLM 分析
+  });
+}</code></pre>
+
+<div class="callout">
+<strong>LLM 看到的是"数据"，不是"错误"。</strong>结构化错误对象给了 LLM 足够的数据来推理解决方案。
+</div>
+
+<h2>模式 3: 异步工具 — 调用外部世界</h2>
+
+<pre><code>const getStockPrice = tool(
+  async ({ symbol }) => {                    // ← async 工具
+    const response = await fetch(            // ← 真实 API 调用
+      `https://api.example.com/stock/${symbol}`
+    );
+    return JSON.stringify({ success: true, ...data });
+  },
+  { name: "get_stock_price", /* ... */ }
+);</code></pre>
+
+<p>Agent 自动 await 异步工具，不需要手动管理 Promise。</p>
+
+<h2>工具描述的黄金法则</h2>
+
+<table style="width:100%; border-collapse:collapse; margin-bottom:1.2rem;">
+  <tr style="border-bottom:2px solid var(--border); text-align:left;">
+    <th style="padding:0.5rem 0.75rem;">法则</th>
+    <th style="padding:0.5rem 0.75rem;">❌ 坏描述</th>
+    <th style="padding:0.5rem 0.75rem;">✅ 好描述</th>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>说明做什么</strong></td>
+    <td style="padding:0.5rem 0.75rem; font-size:0.85rem;">"调用 API 获取数据"</td>
+    <td style="padding:0.5rem 0.75rem; font-size:0.85rem;">"搜索产品。支持关键词、分类、价格范围"</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>说明何时用</strong></td>
+    <td style="padding:0.5rem 0.75rem; font-size:0.85rem;">"获取时间"</td>
+    <td style="padding:0.5rem 0.75rem; font-size:0.85rem;">"当用户问'现在几点'、'今天几号'时使用"</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>说明限制</strong></td>
+    <td style="padding:0.5rem 0.75rem; font-size:0.85rem;">"查询股票价格"</td>
+    <td style="padding:0.5rem 0.75rem; font-size:0.85rem;">"仅支持 AAPL, GOOGL, TSLA, MSFT"</td>
+  </tr>
+  <tr>
+    <td style="padding:0.5rem 0.75rem;"><strong>对偶提示</strong></td>
+    <td style="padding:0.5rem 0.75rem; font-size:0.85rem;">"执行数学计算"</td>
+    <td style="padding:0.5rem 0.75rem; font-size:0.85rem;">"执行数学计算。涉及金额时必须用此工具验证"</td>
+  </tr>
+</table>
+
+<h2>知识检查</h2>
+
+<div class="quiz" id="q1">
+  <div class="question">1. 哪种错误处理方式最有利于 Agent 自我修正？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 抛出 Error，让 Agent 自己看 stack trace</div>
+    <div class="option" data-value="b">B. 返回 { success: false, error: "CODE", message: "...", 具体数值 }</div>
+    <div class="option" data-value="c">C. 捕获异常后用 console.error 打印，返回空字符串</div>
+    <div class="option" data-value="d">D. 直接终止 Agent 运行，让用户手动重试</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q2">
+  <div class="question">2. Zod schema 中 <code>.describe()</code> 的作用是什么？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 生成 TypeScript 类型注释，帮助 IDE 自动补全</div>
+    <div class="option" data-value="b">B. 编译为 JSON Schema 的描述字段，告诉 LLM 每个参数的含义和用法</div>
+    <div class="option" data-value="c">C. 在运行时打印调试信息到控制台</div>
+    <div class="option" data-value="d">D. 生成 API 文档（Swagger/OpenAPI）</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q3">
+  <div class="question">3. 关于 async 工具，哪个说法正确？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. Agent 不支持 async 工具，所有工具必须是同步的</div>
+    <div class="option" data-value="b">B. async 工具需要手动加入事件循环，否则 Agent 跳过它</div>
+    <div class="option" data-value="c">C. Agent 自动 await async 工具，结果返回后才进入下一轮 Think</div>
+    <div class="option" data-value="d">D. async 工具必须用 Web Worker 包装，否则阻塞主线程</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<script>
+(function() {
+  const answers = {
+    q1: { correct: "b", explanation: "正确！结构化错误对象（错误码 + 具体数值 + 可读消息）给了 LLM 足够的数据来推理解决方案。抛异常只能告诉 LLM '出错了'，但不知道为什么和怎么修。" },
+    q2: { correct: "b", explanation: "正确！<code>.describe()</code> 被编译为 function calling JSON Schema 的 <code>description</code> 字段。LLM 完全依赖这些描述来决定每个参数该填什么。" },
+    q3: { correct: "c", explanation: "正确！<code>tool()</code> 原生支持 async 函数。Agent 的 ReAct 循环会在工具返回 Promise 时自动 await。" }
+  };
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const info = answers[quiz.id];
+    const options = quiz.querySelectorAll('.option');
+    const feedback = quiz.querySelector('.feedback');
+    options.forEach(opt => {
+      opt.addEventListener('click', () => {
+        if (opt.classList.contains('correct') || opt.classList.contains('incorrect')) return;
+        options.forEach(o => { o.classList.remove('selected', 'correct', 'incorrect'); });
+        opt.classList.add('selected');
+        if (opt.dataset.value === info.correct) {
+          opt.classList.add('correct');
+          feedback.className = 'feedback correct show';
+        } else {
+          opt.classList.add('incorrect');
+          feedback.className = 'feedback incorrect show';
+          options.forEach(o => { if (o.dataset.value === info.correct) o.classList.add('correct'); });
+        }
+        feedback.innerHTML = info.explanation;
+      });
+    });
+  });
+})();
+</script>
+
+<h2>推荐阅读</h2>
+<ul>
+  <li><a href="https://docs.langchain.com/oss/javascript/langchain/learn">LangChain.js 官方 Learn — Tools 章节</a></li>
+  <li><a href="https://zod.dev/">Zod 官方文档</a></li>
+  <li><a href="tool-design-reference.html">工具设计参考卡片</a></li>
+</ul>
+
+<div class="callout tip"><strong>有问题？</strong> 工具设计是经验积累最多的部分，随时问。</div>
+
+<hr style="margin:2rem 0 1rem; border:none; border-top:1px solid var(--border);">
+
+<div class="lesson-nav">
+  <a href="02-agent-internals.html">← 上一课: 0002</a>
+  <a href="04-rag.html">下一课 → 0004: RAG</a>
+</div>
+
+</body>
+</html>
