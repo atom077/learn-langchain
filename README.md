@@ -11,12 +11,14 @@ learn-langchain/
 ├── 03-tool-design-demo.ts     # Lesson 03: 复杂 Schema、结构化错误、异步工具
 ├── 04-rag-demo.ts             # Lesson 04: RAG 检索增强生成
 ├── 05-memory-demo.ts          # Lesson 05: 对话记忆（Buffer/Window/Summary）
+├── 06-capstone.ts             # Lesson 06: 实战项目 — 个人 AI 助手
 └── lessons/                   # 课程 HTML 页面（含交互式测验）
     ├── 01-first-agent.html
     ├── 02-agent-internals.html
     ├── 03-tool-design.html
     ├── 04-rag.html
     ├── 05-memory.html
+    ├── 06-capstone.html
     ├── tool-design-reference.html
     └── style.css
 ```
@@ -45,6 +47,7 @@ npm run demo:02        # 课 02: 流式输出
 npm run demo:03        # 课 03: 工具设计
 npm run demo:04        # 课 04: RAG
 npm run demo:05        # 课 05: Memory
+npm run demo:06        # 课 06: 实战项目
 ```
 
 ## 学习路线
@@ -56,7 +59,7 @@ npm run demo:05        # 课 05: Memory
 | 03 | 工具设计模式 | 复杂 Schema, 结构化错误, 异步工具, 描述法则 |
 | 04 | RAG 检索增强 | Agent RAG, 检索策略, 防幻觉 |
 | 05 | 对话记忆 | Buffer / Window / Summary Memory |
-| 06 | 实战项目 | 综合 RAG + Memory + Tools（即将推出） |
+| 06 | 实战项目 | 个人 AI 助手：RAG + Memory + Tools 综合应用 |
 
 ## 环境变量
 

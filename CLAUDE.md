@@ -23,6 +23,7 @@ npm run demo:02          # 运行课 02
 npm run demo:03          # 运行课 03
 npm run demo:04          # 运行课 04
 npm run demo:05          # 运行课 05
+npm run demo:06          # 运行课 06（实战项目）
 npx tsx <file>.ts        # 运行任意演示文件
 ```
 

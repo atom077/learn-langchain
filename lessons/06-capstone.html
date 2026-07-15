@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 06 — 实战项目：个人 AI 助手</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>Lesson 06: 实战项目 — 个人 AI 助手</h1>
+
+<div class="lesson-meta">
+  <span>📅 2025-07-14</span>
+  <span>⏱ ~30 分钟</span>
+  <span>🎯 综合 RAG + Memory + Tools 构建完整 Agent 应用</span>
+  <span>📎 课前要求: <a href="05-memory.html">Lesson 05</a></span>
+</div>
+
+<h2>你将要构建的</h2>
+
+<p>
+一个<strong>交互式命令行个人 AI 助手</strong>——它能搜索你的知识库、帮你记笔记、做计算，
+并且在多轮对话中记住你的上下文。这不是玩具项目，而是你在前五课学到的每一项技能的<strong>综合应用</strong>。
+</p>
+
+<div class="callout">
+<strong>为什么这个项目值得展示？</strong>它在一个应用中集成了 Agent 开发的三个核心能力——RAG（知识检索）、Memory（对话记忆）、Tools（工具调用），外加流式输出和交互式 CLI。这正是你在面试中要展示的「从零构建生产级 AI Agent」的项目作品。
+</div>
+
+<h2>系统架构</h2>
+
+<pre><code>┌──────────────────────────────────────────────────┐
+│                   👤 用户终端                      │
+│              (readline 交互式 CLI)                 │
+└──────────────────┬───────────────────────────────┘
+                   │ 用户输入
+                   ▼
+┌──────────────────────────────────────────────────┐
+│               🧠 Memory 管理层                      │
+│  ┌─────────────┐  ┌──────────┐  ┌─────────────┐  │
+│  │ 系统提示词    │  │ 摘要缓存  │  │ 窗口截断     │  │
+│  │ (角色设定)    │  │ (早期对话)│  │ (最近N条)    │  │
+│  └─────────────┘  └──────────┘  └─────────────┘  │
+└──────────────────┬───────────────────────────────┘
+                   │ 组装后的 messages[]
+                   ▼
+┌──────────────────────────────────────────────────┐
+│              🤖 Agent (ReAct 循环)                  │
+│         createAgent({ model, tools })             │
+│              think → act → observe                 │
+└──────┬──────────────┬──────────────┬─────────────┘
+       │              │              │
+  ┌────▼────┐   ┌────▼────┐   ┌─────▼──────┐
+  │ 📚 RAG  │   │ ✍️ 笔记  │   │ 🧮 🕐 工具 │
+  │ 搜索知识库│   │ 添加笔记  │   │ 计算 + 时间 │
+  └─────────┘   └─────────┘   └────────────┘
+       │              │              │
+       └──────────────┴──────────────┘
+               工具返回 → 继续推理</code></pre>
+
+<h2>代码结构</h2>
+
+<p>整个项目约 280 行 TypeScript，分为 6 个清晰的模块：</p>
+
+<table style="width:100%; border-collapse:collapse; margin-bottom:1.2rem;">
+  <tr style="border-bottom:2px solid var(--border); text-align:left;">
+    <th style="padding:0.5rem 0.75rem;">模块</th>
+    <th style="padding:0.5rem 0.75rem;">行数</th>
+    <th style="padding:0.5rem 0.75rem;">对应课程</th>
+    <th style="padding:0.5rem 0.75rem;">关键代码</th>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;">1. 模型配置</td>
+    <td style="padding:0.5rem 0.75rem;">~5</td>
+    <td style="padding:0.5rem 0.75rem;">Lesson 01</td>
+    <td style="padding:0.5rem 0.75rem;"><code>ChatOpenAI + baseURL</code></td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;">2. 知识库定义</td>
+    <td style="padding:0.5rem 0.75rem;">~50</td>
+    <td style="padding:0.5rem 0.75rem;">Lesson 04</td>
+    <td style="padding:0.5rem 0.75rem;"><code>Note[] 类型 + 样本数据</code></td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;">3. 四个工具</td>
+    <td style="padding:0.5rem 0.75rem;">~100</td>
+    <td style="padding:0.5rem 0.75rem;">Lesson 01, 03</td>
+    <td style="padding:0.5rem 0.75rem;"><code>tool() + Zod schema</code></td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;">4. Agent 创建</td>
+    <td style="padding:0.5rem 0.75rem;">~5</td>
+    <td style="padding:0.5rem 0.75rem;">Lesson 01, 02</td>
+    <td style="padding:0.5rem 0.75rem;"><code>createAgent({ model, tools })</code></td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;">5. Memory 管理</td>
+    <td style="padding:0.5rem 0.75rem;">~50</td>
+    <td style="padding:0.5rem 0.75rem;">Lesson 05</td>
+    <td style="padding:0.5rem 0.75rem;">Summary + Window 混合</td>
+  </tr>
+  <tr>
+    <td style="padding:0.5rem 0.75rem;">6. 交互式 CLI</td>
+    <td style="padding:0.5rem 0.75rem;">~50</td>
+    <td style="padding:0.5rem 0.75rem;">新技能</td>
+    <td style="padding:0.5rem 0.75rem;">readline + 流式输出</td>
+  </tr>
+</table>
+
+<h2>先跑代码</h2>
+
+<pre><code>cd learn-langchain
+npx tsx 06-capstone.ts</code></pre>
+
+<p>启动后会进入交互式终端。试试这些指令：</p>
+
+<pre><code># 搜索知识库
+👤 你: 最近有什么会议纪要？
+
+# 添加笔记
+👤 你: 帮我记一下，明天下午 3 点跟老板做 Q3 Review
+
+# 多轮对话（测试 Memory）
+👤 你: 我叫小明
+👤 你: 我叫什么名字？
+
+# 通用工具
+👤 你: 99 * 128 等于多少？
+👤 你: 现在几点了？
+
+# 特殊命令
+👤 你: /notes    (查看知识库概览)
+👤 你: /clear    (重置对话记忆)
+👤 你: /exit     (退出)</code></pre>
+
+<h2>核心设计决策</h2>
+
+<h3>1. Memory: Summary + Window 混合</h3>
+
+<p>这不仅是 Lesson 05 的"手动消息数组"，而是<strong>自动压缩的生产级方案</strong>：</p>
+
+<pre><code>const WINDOW_SIZE = 6;             // 保留最近 6 条消息
+const SUMMARIZE_THRESHOLD = 10;    // 超过 10 条时触发压缩
+
+async function compressHistory() {
+  if (history.length <= SUMMARIZE_THRESHOLD) return;
+
+  const earlyMsgs = history.slice(0, -(WINDOW_SIZE - 1));
+  const recentMsgs = history.slice(-(WINDOW_SIZE - 1));
+
+  // 用 LLM 自动生成摘要
+  const compressResult = await model.invoke([...]);
+  summary = `[对话背景] ${compressResult.content}`;
+
+  history = recentMsgs; // 只保留最近的消息
+}</code></pre>
+
+<div class="callout tip">
+<strong>为什么不用手动摘要？</strong>你自己写的摘要规则永远无法像 LLM 那样理解对话的语义重点——"小明计划离职"比"小明喜欢吃披萨"更需要被记住。让 LLM 决定保留什么，这才是 Agent 时代的方式。
+</div>
+
+<h3>2. RAG: Tool-based Agent RAG</h3>
+
+<p>检索不是独立的 pipeline——它是 Agent 的一个工具。Agent 自己决定<em>什么时候搜、搜什么、搜不到怎么办</em>：</p>
+
+<pre><code>const searchNotes = tool(
+  ({ query }) => { /* TF-like 关键词匹配 + 标签加权 */ },
+  {
+    name: "search_notes",
+    description:
+      "搜索个人知识库中的笔记。当用户询问任何关于项目、会议、" +
+      "学习记录、职业规划、健身计划等信息时，必须先搜索知识库。",
+    schema: z.object({
+      query: z.string().describe("搜索关键词"),
+    }),
+  }
+);</code></pre>
+
+<h3>3. 流式输出：展示 ReAct 循环</h3>
+
+<p>用户能看到 Agent 的<strong>思考过程</strong>——它先调了什么工具、工具返回了什么、最后如何组织回答：</p>
+
+<pre><code>👤 你: 我的 OKR 是什么？
+
+🧠 调用工具: search_notes...
+📋 工具返回: {"found":true,"results":[{"title":"周会纪要 7/7",...}]...
+🤖 根据 7 月 7 日的周会纪要，你的 Q3 OKR 重点是：
+1. 完成 AI Agent 平台的 MVP（8 月底前）
+2. 将用户留存率提升至 45%</code></pre>
+
+<h2>完整的数据流</h2>
+
+<p>从一个用户消息到 AI 回复的完整路径：</p>
+
+<ol>
+  <li><strong>用户输入</strong> → readline 捕获</li>
+  <li><strong>Memory 组装</strong> → 系统提示词 + 摘要 + 最近 N 条历史 + 当前消息 → messages[]</li>
+  <li><strong>Agent 推理</strong> → ReAct 循环：思考是否需要工具 → 需要则调用 → 观察结果 → 继续推理</li>
+  <li><strong>流式输出</strong> → 实时展示每个 chunk（思考/工具调用/最终回复）</li>
+  <li><strong>历史更新</strong> → AI 回复追加到 history[]</li>
+  <li><strong>自动压缩</strong> → 历史超过阈值 → LLM 摘要 → 重置为摘要 + 最近消息</li>
+</ol>
+
+<div class="callout">
+<strong>这就是 Agent 应用的完整生命周期。</strong>理解了这六个步骤，你就理解了 80% 的生产级 Agent 系统是如何工作的。其他一切——向量数据库、LangSmith、LangGraph——都是在这个骨架上添加的优化。
+</div>
+
+<h2>扩展方向（面试加分项）</h2>
+
+<p>如果你想让这个项目更「生产级」，可以考虑这些扩展：</p>
+
+<ol>
+  <li><strong>持久化存储</strong> — 用 SQLite 或文件系统替代内存数组，重启不丢数据</li>
+  <li><strong>真正的向量搜索</strong> — 用 <code>@langchain/community</code> 的 VectorStore 替代 TF 关键词匹配</li>
+  <li><strong>LangSmith 追踪</strong> — 加 <code>LANGSMITH_API_KEY</code> 环境变量，可视化每一步推理</li>
+  <li><strong>多 Agent 协作</strong> — 用 LangGraph 拆成「检索 Agent」「笔记 Agent」「通用 Agent」</li>
+  <li><strong>Web UI</strong> — 用 Next.js + Vercel AI SDK 替代 CLI，做成真正可部署的聊天应用</li>
+</ol>
+
+<h2>知识检查</h2>
+
+<div class="quiz" id="q1">
+  <div class="question">1. 这个项目的 Memory 为什么选用 Summary + Window 混合策略，而不是单纯的 Buffer？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. Buffer Memory 在 LangChain.js v1 中已被废弃，无法使用</div>
+    <div class="option" data-value="b">B. 单纯 Buffer 在长对话中 token 成本线性增长无上限，混合策略用摘要控制成本同时保留关键信息</div>
+    <div class="option" data-value="c">C. DeepSeek 的 API 不支持超过 100 条消息的请求</div>
+    <div class="option" data-value="d">D. Summary + Window 是 LangChain.js 框架强制要求的模式</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q2">
+  <div class="question">2. 为什么把 RAG 检索做成 Agent 的一个 tool，而不是独立的 pipeline？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. tool 形式的 RAG 让 Agent 自己决定何时搜索、搜什么、搜不到时如何调整，比固定 pipeline 更灵活</div>
+    <div class="option" data-value="b">B. pipeline 方式需要额外的数据库连接，tool 方式不需要</div>
+    <div class="option" data-value="c">C. LangChain.js v1 只支持 tool，不支持 pipeline</div>
+    <div class="option" data-value="d">D. tool 方式的检索速度比 pipeline 快 10 倍以上</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q3">
+  <div class="question">3. `compressHistory()` 中为什么用 LLM 来生成摘要，而不是写规则（比如只保留包含特定关键词的消息）？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 规则方式需要写更多代码，而 LLM 方式代码更短</div>
+    <div class="option" data-value="b">B. LLM 能理解对话的语义重要性——「用户计划离职」比「用户喜欢吃披萨」更值得被记住——这是规则做不到的</div>
+    <div class="option" data-value="c">C. DeepSeek 的摘要 API 是免费的，不会增加额外成本</div>
+    <div class="option" data-value="d">D. 规则方式会触发 TypeScript 编译器的严格模式警告</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<script>
+(function() {
+  const answers = {
+    q1: { correct: "b", explanation: "正确！Buffer Memory 的 token 成本随对话长度线性增长，没有上限。Summary + Window 的混合策略用 LLM 摘要保留早期关键语义，用窗口保留最近上下文细节——既控制了成本，又不完全丢失早期信息。这是生产环境的实际最佳实践。" },
+    q2: { correct: "a", explanation: "正确！Tool-based RAG 的核心优势是 Agent 的自主决策能力。它可以根据问题的复杂度决定搜一次还是多次、用不同关键词重试、搜不到时诚实告知并建议其他方向。固定 pipeline 做不到这种灵活性。" },
+    q3: { correct: "b", explanation: "正确！这是 Agent 时代的核心思维转变：不要在应用层写死规则来决定「什么信息重要」——让 LLM 自己判断。LLM 能理解语义重要性（离职 vs 披萨偏好），而关键词规则只能做表面匹配。" }
+  };
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const info = answers[quiz.id];
+    const options = quiz.querySelectorAll('.option');
+    const feedback = quiz.querySelector('.feedback');
+    options.forEach(opt => {
+      opt.addEventListener('click', () => {
+        if (opt.classList.contains('correct') || opt.classList.contains('incorrect')) return;
+        options.forEach(o => { o.classList.remove('selected', 'correct', 'incorrect'); });
+        opt.classList.add('selected');
+        if (opt.dataset.value === info.correct) {
+          opt.classList.add('correct');
+          feedback.className = 'feedback correct show';
+        } else {
+          opt.classList.add('incorrect');
+          feedback.className = 'feedback incorrect show';
+          options.forEach(o => { if (o.dataset.value === info.correct) o.classList.add('correct'); });
+        }
+        feedback.innerHTML = info.explanation;
+      });
+    });
+  });
+})();
+</script>
+
+<h2>推荐阅读</h2>
+<ul>
+  <li><a href="https://docs.langchain.com/oss/javascript/langchain/overview">LangChain.js 官方文档</a> — Agent, Tools, Streaming</li>
+  <li><a href="https://github.com/langchain-ai/langchainjs">LangChain.js GitHub</a> — 源码和示例</li>
+  <li><a href="tool-design-reference.html">工具设计速查参考</a> — 本课程的参考卡片</li>
+</ul>
+
+<div class="callout tip">
+<strong>恭喜！🎉</strong> 你已经完成了 LangChain.js 学习路线的全部六课。从第一个 Agent 到这个完整的个人 AI 助手，你掌握了 Agent 开发的 80% 核心技能。继续往下——LangGraph 多 Agent 编排、LangSmith 可观测性、生产部署——都是在这个基础上的自然延伸。<strong>有任何疑问随时问。</strong>
+</div>
+
+<hr style="margin:2rem 0 1rem; border:none; border-top:1px solid var(--border);">
+
+<div class="lesson-nav">
+  <a href="05-memory.html">← 上一课: 05 Memory</a>
+  <span>你已到达课程终点！🏁</span>
+</div>
+
+</body>
+</html>
