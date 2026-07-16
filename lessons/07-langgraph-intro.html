@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 07 — LangGraph：构建有状态 Agent 工作流</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>Lesson 07: LangGraph — 构建有状态 Agent 工作流</h1>
+
+<div class="lesson-meta">
+  <span>📅 2026-07-15</span>
+  <span>⏱ ~25 分钟</span>
+  <span>🎯 用 LangGraph 构建显式控制的 Agent 工作流</span>
+  <span>📎 课前要求: <a href="06-capstone.html">Lesson 06 实战项目</a></span>
+</div>
+
+<h2>你将要学会的</h2>
+<ol>
+  <li><strong>LangGraph 是什么</strong> — 跟 <code>createAgent()</code> 的本质区别</li>
+  <li><strong>StateGraph</strong> — 定义状态、节点、边，编译为可执行图</li>
+  <li><strong>Annotation 自定义 State</strong> — 不只是 messages，还能追踪业务数据</li>
+  <li><strong>条件分支</strong> — 路由函数决定执行路径，实现 "if 意图=A → 走这条路"</li>
+</ol>
+
+<h2>问题：createAgent 不够用的时候</h2>
+
+<p>你在前六课用的 <code>createAgent()</code> 是<strong>自主决策</strong>——Agent 自己决定调用哪个工具、推理到什么时候停止。这很灵活，但有两个痛点：</p>
+
+<ol>
+  <li><strong>不可控</strong> — 你无法保证 Agent 一定走某条路径。「先验证用户身份 → 再执行操作」这种顺序，Agent 可能跳过</li>
+  <li><strong>无状态</strong> — 除了消息历史，你没法在流程中追踪「当前在第几步」「已经处理了多少条」</li>
+</ol>
+
+<div class="callout">
+<strong>LangGraph 解决的就是这两个问题。</strong>它让你<strong>显式定义工作流</strong>——每个步骤是一个节点（Node），步骤之间的跳转是边（Edge），流程中携带的数据是状态（State）。
+</div>
+
+<h2>核心概念</h2>
+
+<table style="width:100%; border-collapse:collapse; margin-bottom:1.2rem;">
+  <tr style="border-bottom:2px solid var(--border); text-align:left;">
+    <th style="padding:0.5rem 0.75rem;">概念</th>
+    <th style="padding:0.5rem 0.75rem;">类比</th>
+    <th style="padding:0.5rem 0.75rem;">说明</th>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>State（状态）</strong></td>
+    <td style="padding:0.5rem 0.75rem;">流水线上的产品</td>
+    <td style="padding:0.5rem 0.75rem;">在节点之间流动的数据。每个节点读取 state、返回部分更新</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>Node（节点）</strong></td>
+    <td style="padding:0.5rem 0.75rem;">工位</td>
+    <td style="padding:0.5rem 0.75rem;">一个函数，接收 state、返回更新。可以调用 LLM、执行代码、调用 API</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>Edge（边）</strong></td>
+    <td style="padding:0.5rem 0.75rem;">传送带</td>
+    <td style="padding:0.5rem 0.75rem;">定义节点间的跳转规则。固定边（A→B）或条件边（A→B 或 C）</td>
+  </tr>
+  <tr>
+    <td style="padding:0.5rem 0.75rem;"><strong>Reducer</strong></td>
+    <td style="padding:0.5rem 0.75rem;">合并策略</td>
+    <td style="padding:0.5rem 0.75rem;">定义 state 字段如何合并新值和旧值。追加（messages）、覆盖（count）、累积（notes）</td>
+  </tr>
+</table>
+
+<h2>先跑代码</h2>
+
+<pre><code>cd learn-langchain
+npx tsx 07-langgraph-intro.ts</code></pre>
+
+<p>三个演示依次运行：线性图 → 自定义 State → 条件分支。</p>
+
+<h2>演示 1: 线性图 — 两个节点串联</h2>
+
+<p>最简单的 LangGraph：两个节点，一条直线。</p>
+
+<pre><code>import { StateGraph, MessagesAnnotation, START, END } from "@langchain/langgraph";
+
+const graph = new StateGraph(MessagesAnnotation)
+  .addNode("think", (state) => {
+    // state.messages 是所有累积的消息
+    return { messages: [{ role: "assistant", content: "正在思考..." }] };
+  })
+  .addNode("reply", (state) => {
+    return { messages: [{ role: "assistant", content: "你好！" }] };
+  })
+  .addEdge(START, "think")   // 入口 → think
+  .addEdge("think", "reply") // think → reply
+  .addEdge("reply", END)     // reply → 出口
+  .compile();
+
+await graph.invoke({ messages: [{ role: "user", content: "你好" }] });</code></pre>
+
+<p><code>StateGraph(MessagesAnnotation)</code> 创建图，<code>MessagesAnnotation</code> 是最简单的 State——只包含一个 <code>messages</code> 数组（自动累积）。</p>
+
+<h2>演示 2: 自定义 State — 用 Annotation 追踪业务数据</h2>
+
+<p>真实场景不只追踪 messages，还需要<strong>业务状态</strong>——比如第几轮对话、操作日志。</p>
+
+<pre><code>const CounterState = Annotation.Root({
+  messages: Annotation({              // 消息：追加累积
+    reducer: (left, right) => left.concat(right),
+    default: () => [],
+  }),
+  count: Annotation({                 // 计数：新值覆盖旧值
+    reducer: (_, right) => right,
+    default: () => 0,
+  }),
+  notes: Annotation({                 // 日志：数组累积
+    reducer: (left, right) => [...left, ...right],
+    default: () => [],
+  }),
+});</code></pre>
+
+<div class="callout tip">
+<strong>Reducer 是关键。</strong>它定义了「当节点返回新值时，如何跟旧值合并」。<code>left</code> 是旧值，<code>right</code> 是新值。messages 用 concat（追加），count 用 right（覆盖），notes 用 spread（累积）。
+</div>
+
+<h2>演示 3: 条件分支 — 路由函数</h2>
+
+<p>这不只是一个「if/else」——它是<strong>把业务逻辑注入图结构</strong>的方式。</p>
+
+<pre><code>const branchGraph = new StateGraph(MessagesAnnotation)
+  .addNode("classify", classifyNode)    // 分类节点
+  .addNode("calculate", calcHandler)    // 计算分支
+  .addNode("time", timeHandler)         // 时间分支
+  .addNode("chat", chatHandler)         // 聊天分支
+  .addEdge(START, "classify")
+  .addConditionalEdges("classify", (state) => {
+    // 路由函数：读取 state，返回下一个节点名
+    const msg = state.messages.at(-1);
+    if (msg.content.includes("算")) return "calculate";
+    if (msg.content.includes("时间")) return "time";
+    return "chat";
+  })
+  .addEdge("calculate", END)
+  .addEdge("time", END)
+  .addEdge("chat", END)
+  .compile();</code></pre>
+
+<h2>LangGraph vs createAgent：什么时候用哪个？</h2>
+
+<table style="width:100%; border-collapse:collapse; margin-bottom:1.2rem;">
+  <tr style="border-bottom:2px solid var(--border); text-align:left;">
+    <th style="padding:0.5rem 0.75rem;">维度</th>
+    <th style="padding:0.5rem 0.75rem;">createAgent (ReAct)</th>
+    <th style="padding:0.5rem 0.75rem;">LangGraph</th>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;">控制方式</td>
+    <td style="padding:0.5rem 0.75rem;">Agent 自主决策</td>
+    <td style="padding:0.5rem 0.75rem;">你显式定义图</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;">确定性</td>
+    <td style="padding:0.5rem 0.75rem;">低（LLM 可能走偏）</td>
+    <td style="padding:0.5rem 0.75rem;">高（代码决定路径）</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;">适合</td>
+    <td style="padding:0.5rem 0.75rem;">开放域对话、灵活任务</td>
+    <td style="padding:0.5rem 0.75rem;">审批流、Pipeline、多步处理</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;">状态</td>
+    <td style="padding:0.5rem 0.75rem;">隐式（只有消息）</td>
+    <td style="padding:0.5rem 0.75rem;">显式（自定义字段 + reducer）</td>
+  </tr>
+  <tr>
+    <td style="padding:0.5rem 0.75rem;">分支/并行</td>
+    <td style="padding:0.5rem 0.75rem;">不支持</td>
+    <td style="padding:0.5rem 0.75rem;">原生支持</td>
+  </tr>
+</table>
+
+<div class="callout">
+<strong>经验法则：</strong>用户说「帮我做 X」→ createAgent（自主探索）。你规定「先 A → 根据结果走 B 或 C → D」→ LangGraph（显式控制）。
+</div>
+
+<h2>知识检查</h2>
+
+<div class="quiz" id="q1">
+  <div class="question">1. Annotation.Root 中每个字段的 reducer 函数的作用是什么？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 定义字段的 TypeScript 类型，用于编译时检查</div>
+    <div class="option" data-value="b">B. 定义节点返回的新值如何与旧值合并——追加、覆盖还是累积</div>
+    <div class="option" data-value="c">C. 定义该字段在哪个节点中被写入，防止并发冲突</div>
+    <div class="option" data-value="d">D. 定义该字段的默认值在什么时候被重置</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q2">
+  <div class="question">2. LangGraph 跟 createAgent() 最大的区别是什么？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. LangGraph 只能处理文本，createAgent 可以调用工具</div>
+    <div class="option" data-value="b">B. createAgent 用 Agent 自主决策，LangGraph 由你显式定义节点和边来控制执行流程</div>
+    <div class="option" data-value="c">C. LangGraph 运行速度比 createAgent 快 10 倍</div>
+    <div class="option" data-value="d">D. createAgent 不支持 TypeScript，LangGraph 支持</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q3">
+  <div class="question">3. 下面哪种场景更适合用 LangGraph 而不是 createAgent？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 开放域聊天，用户问什么答什么</div>
+    <div class="option" data-value="b">B. 先验证用户权限 → 执行操作 → 记录审计日志 → 发送通知，这个固定流程</div>
+    <div class="option" data-value="c">C. 让 Agent 自己决定调用哪些工具来回答用户问题</div>
+    <div class="option" data-value="d">D. 一个简单的天气查询助手</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<script>
+(function() {
+  const answers = {
+    q1: { correct: "b", explanation: "正确！reducer 定义了合并策略：<code>(left, right)</code> 中 left 是当前值，right 是节点返回值。常见策略：concat（追加到数组）、right 直接覆盖、spread 累积。" },
+    q2: { correct: "b", explanation: "正确！createAgent 让 LLM 在 ReAct 循环中自主决策（灵活但不可控）。LangGraph 让你像画流程图一样显式定义执行路径（可控但需要更多代码）。" },
+    q3: { correct: "b", explanation: "正确！有明确的步骤顺序和条件分支（权限→操作→记录→通知）是 LangGraph 的理想场景。开放域聊天和简单问答用 createAgent 更合适。" }
+  };
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const info = answers[quiz.id];
+    const options = quiz.querySelectorAll('.option');
+    const feedback = quiz.querySelector('.feedback');
+    options.forEach(opt => {
+      opt.addEventListener('click', () => {
+        if (opt.classList.contains('correct') || opt.classList.contains('incorrect')) return;
+        options.forEach(o => { o.classList.remove('selected', 'correct', 'incorrect'); });
+        opt.classList.add('selected');
+        if (opt.dataset.value === info.correct) {
+          opt.classList.add('correct');
+          feedback.className = 'feedback correct show';
+        } else {
+          opt.classList.add('incorrect');
+          feedback.className = 'feedback incorrect show';
+          options.forEach(o => { if (o.dataset.value === info.correct) o.classList.add('correct'); });
+        }
+        feedback.innerHTML = info.explanation;
+      });
+    });
+  });
+})();
+</script>
+
+<h2>推荐阅读</h2>
+<ul>
+  <li><a href="https://docs.langchain.com/oss/javascript/langgraph/overview">LangGraph.js 官方文档</a></li>
+  <li><a href="https://github.com/langchain-ai/langgraphjs">LangGraph.js GitHub</a></li>
+</ul>
+
+<div class="callout tip">
+<strong>下一步：</strong>LangGraph 还有更多高级能力——LLM 节点（让模型参与决策）、工具节点（在图中调用工具）、子图（嵌套工作流）、interrupt（人工审批暂停点）。有任何疑惑随时问。
+</div>
+
+<hr style="margin:2rem 0 1rem; border:none; border-top:1px solid var(--border);">
+
+<div class="lesson-nav">
+  <a href="06-capstone.html">← 上一课: 06 实战项目</a>
+  <a href="08-langgraph-agent.html">下一课 → 08: LangGraph Agent</a>
+</div>
+
+</body>
+</html>
