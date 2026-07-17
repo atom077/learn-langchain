@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 09 — 多 Agent 协作：Pipeline、Router、Supervisor</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>Lesson 09: 多 Agent 协作 — Pipeline · Router · Supervisor</h1>
+
+<div class="lesson-meta">
+  <span>📅 2026-07-17</span>
+  <span>⏱ ~25 分钟</span>
+  <span>🎯 用 LangGraph 编排多个专职 Agent 协同工作</span>
+  <span>📎 课前要求: <a href="08-langgraph-agent.html">Lesson 08 LangGraph Agent</a></span>
+</div>
+
+<h2>你将要学会的</h2>
+<ol>
+  <li><strong>Pipeline 模式</strong> — Agent 按固定顺序接力，前一个的输出是后一个的输入</li>
+  <li><strong>Router 模式</strong> — 一个路由节点判断意图，分发到不同的专职 Agent</li>
+  <li><strong>Supervisor 模式</strong> — 主管 Agent 动态分派任务给工人，收集结果后汇总</li>
+  <li><strong>三种模式的选择标准</strong> — 什么时候用哪种</li>
+</ol>
+
+<h2>问题：单个 Agent 的局限</h2>
+
+<p>前八课我们构建的都是<strong>单 Agent 系统</strong>——一个模型 + 一组工具。这在大多数场景下够用，但当任务变复杂时：</p>
+
+<ul>
+  <li>一个 Agent 的 system prompt 既要研究又要写作，容易顾此失彼</li>
+  <li>不同任务需要不同的工具集，单 Agent 的工具列表太臃肿</li>
+  <li>无法并行处理多个子任务</li>
+</ul>
+
+<div class="callout">
+<strong>多 Agent 协作就是解药。</strong>把一个大任务拆成多个小任务，每个 Agent 专注一件事。LangGraph 的图结构天然适合编排多 Agent——每个 Agent 是一个节点（或子图），它们之间通过 State 传递数据。
+</div>
+
+<h2>先跑代码</h2>
+
+<pre><code>cd learn-langchain
+npx tsx 09-multi-agent.ts</code></pre>
+
+<p>三个演示依次运行，展示三种不同的多 Agent 协作模式。</p>
+
+<h2>模式 1: Pipeline — 串联接力</h2>
+
+<pre><code>START → 研究员 Agent (搜索+整理) → 撰稿人 Agent (写作) → END</code></pre>
+
+<p>每个 Agent 有不同的 system prompt 和工具集：</p>
+
+<ul>
+  <li><strong>研究员</strong>: 只有 <code>search_docs</code> 工具。System prompt 说「只收集资料，不做分析」</li>
+  <li><strong>撰稿人</strong>: 没有任何工具。System prompt 说「根据研究笔记写结构报告」</li>
+</ul>
+
+<p>研究员的结果通过 <code>researchNotes</code> State 字段传给撰稿人：</p>
+
+<pre><code>const PipelineState = Annotation.Root({
+  messages: Annotation({ reducer: (l, r) => l.concat(r) }),
+  researchNotes: Annotation({ reducer: (_, r) => r }), // ← 研究员写入，撰稿人读取
+});</code></pre>
+
+<table style="width:100%; border-collapse:collapse; margin-bottom:1.2rem;">
+  <tr style="border-bottom:2px solid var(--border); text-align:left;">
+    <th style="padding:0.5rem 0.75rem;">特点</th>
+    <th style="padding:0.5rem 0.75rem;">Pipeline</th>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;">结构</td>
+    <td style="padding:0.5rem 0.75rem;">固定顺序，A→B→C</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;">适合</td>
+    <td style="padding:0.5rem 0.75rem;">任务有明确的上下游依赖</td>
+  </tr>
+  <tr>
+    <td style="padding:0.5rem 0.75rem;">示例</td>
+    <td style="padding:0.5rem 0.75rem;">搜索→筛选→写作｜编码→审查→测试</td>
+  </tr>
+</table>
+
+<h2>模式 2: Router — 一次分发</h2>
+
+<pre><code>          ┌→ 数学 Agent (calculator 工具)
+START → 路由节点 ─┼→ 搜索 Agent (search_docs 工具)
+          └→ 通用 Agent (无工具)</code></pre>
+
+<p>路由节点分析用户意图，分发到对应的专职 Agent。每个 Agent 只知道自己的领域：</p>
+
+<pre><code>// 路由函数 — 根据用户意图选择 Agent
+function routeToAgent(state) {
+  return state.nextAgent; // "math" | "search" | "general"
+}
+
+const routerGraph = new StateGraph(RouterState)
+  .addNode("router", routerNode)      // 判断意图
+  .addNode("math", mathAgentNode)     // 只有 calculator
+  .addNode("search", searchAgentNode) // 只有 search_docs
+  .addNode("general", generalAgentNode) // 没有工具
+  .addConditionalEdges("router", routeToAgent, {
+    math: "math", search: "search", general: "general",
+  })
+  // 所有 Agent 执行完 → END
+  .addEdge("math", END).addEdge("search", END).addEdge("general", END)</code></pre>
+
+<div class="callout tip">
+<strong>Router vs Pipeline 的区别：</strong>Pipeline 是 A→B→C 所有节点都走一遍。Router 是根据条件走一条路（互斥分支），一个请求只经过一个 Agent。
+</div>
+
+<h2>模式 3: Supervisor — 动态分派 + 循环汇总</h2>
+
+<pre><code>START → 主管 Agent → 工人 Agent → 主管 Agent → 工人 Agent → ... → 主管: END
+         │              │              │
+         分析任务          执行工具           汇总报告</code></pre>
+
+<p>这是最灵活的协作模式。主管 Agent 负责：</p>
+
+<ol>
+  <li><strong>分析</strong>: 用户需要什么？拆成哪些子任务？</li>
+  <li><strong>分派</strong>: 调用哪些工人？传什么参数？</li>
+  <li><strong>汇总</strong>: 工人执行完了，结果够不够？不够继续分派，够了就汇总输出</li>
+</ol>
+
+<p>工人 Agent 只负责执行——调用工具，返回事实性结果。</p>
+
+<pre><code>// 主管和工人形成循环
+const supervisorGraph = new StateGraph(SupervisorState)
+  .addNode("supervisor", supervisorNode)
+  .addNode("worker", workerNode)
+  .addEdge(START, "supervisor")
+  .addConditionalEdges("supervisor", routeAfterSupervisor)
+  .addConditionalEdges("worker", routeAfterWorker)
+  // supervisor → worker → supervisor → worker → ... → END</code></pre>
+
+<h2>三种模式对比</h2>
+
+<table style="width:100%; border-collapse:collapse; margin-bottom:1.2rem;">
+  <tr style="border-bottom:2px solid var(--border); text-align:left;">
+    <th style="padding:0.5rem 0.75rem;"></th>
+    <th style="padding:0.5rem 0.75rem;">Pipeline</th>
+    <th style="padding:0.5rem 0.75rem;">Router</th>
+    <th style="padding:0.5rem 0.75rem;">Supervisor</th>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>结构</strong></td>
+    <td style="padding:0.5rem 0.75rem;">固定顺序</td>
+    <td style="padding:0.5rem 0.75rem;">一次分发</td>
+    <td style="padding:0.5rem 0.75rem;">动态分派+循环</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>Agent 数</strong></td>
+    <td style="padding:0.5rem 0.75rem;">2-3</td>
+    <td style="padding:0.5rem 0.75rem;">3-N</td>
+    <td style="padding:0.5rem 0.75rem;">3-N</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>适合场景</strong></td>
+    <td style="padding:0.5rem 0.75rem;">有明确前后依赖</td>
+    <td style="padding:0.5rem 0.75rem;">任务类型互斥</td>
+    <td style="padding:0.5rem 0.75rem;">复杂任务需多轮</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>控制权</strong></td>
+    <td style="padding:0.5rem 0.75rem;">图结构</td>
+    <td style="padding:0.5rem 0.75rem;">路由规则</td>
+    <td style="padding:0.5rem 0.75rem;">主管 Agent</td>
+  </tr>
+  <tr>
+    <td style="padding:0.5rem 0.75rem;"><strong>灵活性</strong></td>
+    <td style="padding:0.5rem 0.75rem;">低</td>
+    <td style="padding:0.5rem 0.75rem;">中</td>
+    <td style="padding:0.5rem 0.75rem;">高</td>
+  </tr>
+</table>
+
+<div class="callout">
+<strong>选择指南：</strong>固定依赖 → Pipeline，互斥类型 → Router，动态多轮 → Supervisor。三者也非互斥——一个复杂的 Supervisor 的子工人本身可以是一个 Pipeline。
+</div>
+
+<h2>知识检查</h2>
+
+<div class="quiz" id="q1">
+  <div class="question">1. Pipeline 模式和 Router 模式最大的区别是什么？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. Pipeline 需要更多 GPU 内存，Router 不需要</div>
+    <div class="option" data-value="b">B. Pipeline 所有 Agent 都依次执行（串联），Router 只执行被路由到的那个（互斥分支）</div>
+    <div class="option" data-value="c">C. Router 只能用于数学计算，Pipeline 只能用于文本生成</div>
+    <div class="option" data-value="d">D. Pipeline Agent 不能调用 LLM，Router Agent 可以</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q2">
+  <div class="question">2. Supervisor 模式中，主管 Agent 不做什么？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 分析用户任务，拆分为子任务</div>
+    <div class="option" data-value="b">B. 亲自调用所有工具执行子任务</div>
+    <div class="option" data-value="c">C. 收集工人执行结果，汇总为最终回答</div>
+    <div class="option" data-value="d">D. 动态决定继续分派工人还是停止</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q3">
+  <div class="question">3. LangGraph 在多 Agent 协作中的核心价值是什么？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 自动为每个 Agent 生成最优的 system prompt</div>
+    <div class="option" data-value="b">B. 用图结构（节点+边+State）显式定义 Agent 之间的协作关系和数据流动</div>
+    <div class="option" data-value="c">C. 让多个 Agent 在一个 GPU 上并行推理</div>
+    <div class="option" data-value="d">D. 提供 Agent 之间的加密通信通道</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<script>
+(function() {
+  const answers = {
+    q1: { correct: "b", explanation: "正确！Pipeline 是 A→B→C 全部走过的串联流水线（如研究→写作）。Router 是一次性分发，根据意图走一条路（如数学问题走数学 Agent，搜索问题走搜索 Agent），互斥分支。" },
+    q2: { correct: "b", explanation: "正确！主管不亲自执行工具——它分析任务、分派给工人、收集结果、汇总输出。实际的工具调用（search_docs、calculator）由工人执行。这种分工让主管专注于规划和综合，工人专注于执行。" },
+    q3: { correct: "b", explanation: "正确！LangGraph 的 StateGraph 是天然的 Agent 编排框架——每个 Agent 是一个节点，State 是它们共享的数据总线，Edge 定义协作顺序。没有 LangGraph，你需要在应用层手动管理这些。" }
+  };
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const info = answers[quiz.id];
+    const options = quiz.querySelectorAll('.option');
+    const feedback = quiz.querySelector('.feedback');
+    options.forEach(opt => {
+      opt.addEventListener('click', () => {
+        if (opt.classList.contains('correct') || opt.classList.contains('incorrect')) return;
+        options.forEach(o => { o.classList.remove('selected', 'correct', 'incorrect'); });
+        opt.classList.add('selected');
+        if (opt.dataset.value === info.correct) {
+          opt.classList.add('correct');
+          feedback.className = 'feedback correct show';
+        } else {
+          opt.classList.add('incorrect');
+          feedback.className = 'feedback incorrect show';
+          options.forEach(o => { if (o.dataset.value === info.correct) o.classList.add('correct'); });
+        }
+        feedback.innerHTML = info.explanation;
+      });
+    });
+  });
+})();
+</script>
+
+<h2>推荐阅读</h2>
+<ul>
+  <li><a href="https://docs.langchain.com/oss/javascript/langgraph/overview">LangGraph.js 官方文档 — Multi-Agent</a></li>
+  <li><a href="https://github.com/langchain-ai/langgraphjs">LangGraph.js GitHub — Multi-Agent 示例</a></li>
+</ul>
+
+<div class="callout tip">
+<strong>下一步：</strong>你的 LangGraph Agent 工具包已经完备——Pipeline/Router/Supervisor 三种协作模式覆盖了绝大多数多 Agent 场景。接下来可以学习 LangSmith 可观测性（追踪每一步推理），或实战一个完整的多 Agent 应用。有任何疑惑随时问。
+</div>
+
+<hr style="margin:2rem 0 1rem; border:none; border-top:1px solid var(--border);">
+
+<div class="lesson-nav">
+  <a href="08-langgraph-agent.html">← 上一课: 08 LangGraph Agent</a>
+  <span>LangGraph 系列完成！🏁</span>
+</div>
+
+</body>
+</html>
