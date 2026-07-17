@@ -11,7 +11,8 @@
     "demo:04": "tsx 04-rag-demo.ts",
     "demo:05": "tsx 05-memory-demo.ts",
     "demo:06": "tsx 06-capstone.ts",
-    "demo:07": "tsx 07-langgraph-intro.ts"
+    "demo:07": "tsx 07-langgraph-intro.ts",
+    "demo:08": "tsx 08-langgraph-agent.ts"
   },
   "keywords": [],
   "author": "",
