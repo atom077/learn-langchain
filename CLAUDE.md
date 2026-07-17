@@ -27,6 +27,7 @@ npm run demo:06          # 运行课 06（实战项目）
 npm run demo:07          # 运行课 07（LangGraph 入门）
 npm run demo:08          # 运行课 08（LangGraph Agent）
 npm run demo:09          # 运行课 09（多 Agent 协作）
+npm run demo:10          # 运行课 10（Human-in-the-loop）
 npx tsx <file>.ts        # 运行任意演示文件
 ```
 

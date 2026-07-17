@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 10 — Human-in-the-loop：人工审批与流程中断</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>Lesson 10: Human-in-the-loop — interrupt + Command</h1>
+
+<div class="lesson-meta">
+  <span>📅 2026-07-17</span>
+  <span>⏱ ~25 分钟</span>
+  <span>🎯 在 LangGraph 工作流中插入人工审批点，暂停等待并恢复执行</span>
+  <span>📎 课前要求: <a href="08-langgraph-agent.html">Lesson 08 LangGraph Agent</a></span>
+</div>
+
+<h2>你将要学会的</h2>
+<ol>
+  <li><strong>interrupt()</strong> — 在图节点中挂起执行，等待人工输入</li>
+  <li><strong>Command({ resume })</strong> — 恢复被挂起的图，传入人工决策</li>
+  <li><strong>MemorySaver + thread_id</strong> — 跨 invoke 持久化图状态</li>
+  <li><strong>审批工作流模式</strong> — LLM 提方案 → 人审批 → 执行</li>
+</ol>
+
+<h2>问题：Agent 不应该能自己做所有决定</h2>
+
+<p>前九课构建的 Agent 和 Graph 都是<strong>全自动</strong>的——给了输入，一路跑到输出。但在生产环境中：</p>
+
+<ul>
+  <li>大额转账需要<strong>人工审批</strong></li>
+  <li>代码部署需要<strong>技术主管确认</strong></li>
+  <li>内容发布需要<strong>编辑审核</strong></li>
+</ul>
+
+<p>这些场景中，你不能让 Agent 自己决定「批准」——需要插入一个<strong>人工关卡</strong>。</p>
+
+<div class="callout">
+<strong>Human-in-the-loop 就是解决这个问题的。</strong>LangGraph 提供了 <code>interrupt()</code> 在任意节点中挂起图，然后用 <code>Command({ resume })</code> 恢复。图的状态通过 checkpointer 持久化，所以「审批者」可以是几分钟后的另一次 API 调用。
+</div>
+
+<h2>先跑代码</h2>
+
+<pre><code>cd learn-langchain
+npx tsx 10-human-in-the-loop.ts</code></pre>
+
+<p>观察每个演示中的「invoke 1(挂起) → invoke 2(恢复)」模式。</p>
+
+<h2>核心 API</h2>
+
+<table style="width:100%; border-collapse:collapse; margin-bottom:1.2rem;">
+  <tr style="border-bottom:2px solid var(--border); text-align:left;">
+    <th style="padding:0.5rem 0.75rem;">API</th>
+    <th style="padding:0.5rem 0.75rem;">作用</th>
+    <th style="padding:0.5rem 0.75rem;">示例</th>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><code>interrupt(msg)</code></td>
+    <td style="padding:0.5rem 0.75rem;">在节点中挂起图</td>
+    <td style="padding:0.5rem 0.75rem;"><code>const result = interrupt("请审批")</code></td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><code>Command({ resume })</code></td>
+    <td style="padding:0.5rem 0.75rem;">恢复执行，传入值给 interrupt()</td>
+    <td style="padding:0.5rem 0.75rem;"><code>new Command({ resume: "approve" })</code></td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><code>MemorySaver</code></td>
+    <td style="padding:0.5rem 0.75rem;">内存 checkpointer，持久化图状态</td>
+    <td style="padding:0.5rem 0.75rem;"><code>.compile({ checkpointer: new MemorySaver() })</code></td>
+  </tr>
+  <tr>
+    <td style="padding:0.5rem 0.75rem;"><code>thread_id</code></td>
+    <td style="padding:0.5rem 0.75rem;">线程 ID，关联多次 invoke</td>
+    <td style="padding:0.5rem 0.75rem;"><code>{ configurable: { thread_id: "xxx" } }</code></td>
+  </tr>
+</table>
+
+<h2>演示 1: 基础审批关</h2>
+
+<pre><code>// 图中有一个人工审批节点
+.addNode("review", (_state) => {
+  // interrupt() 挂起图，返回值给调用方
+  const decision = interrupt({
+    question: "请审核此操作",
+    options: ["approve", "deny"],
+  });
+  return { decision };
+})
+
+// 第一次 invoke: 运行到 interrupt，挂起
+const r1 = await graph.invoke({ messages: [...] }, config);
+// → 图暂停，r1 是挂起前的状态
+
+// 第二次 invoke: 用 Command 恢复，传入审批结果
+const r2 = await graph.invoke(
+  new Command({ resume: "approve" }),  // ← interrupt() 返回 "approve"
+  config  // ← 相同 thread_id，继续之前的图
+);
+// → 图从 interrupt 之后继续执行</code></pre>
+
+<div class="callout tip">
+<strong>关键是 thread_id。</strong>同一个 thread_id 的多次 invoke 共享同一个图状态。第一次 invoke 在 interrupt 处挂起，第二次 invoke 从那里继续。不同 thread_id → 不同的图实例。
+</div>
+
+<h2>演示 2: LLM 建议 + 人工审批</h2>
+
+<pre><code>START → analyze (LLM分析+提方案) → ⏸️ approval (人工审批) → execute → END
+                                                   └→ deny → END</code></pre>
+
+<p>这是生产中最常见的模式：</p>
+<ol>
+  <li><strong>LLM 分析</strong>: Agent 分析问题，提出具体方案，但不执行</li>
+  <li><strong>人工审批</strong>: <code>interrupt()</code> 挂起，人类审查方案</li>
+  <li><strong>执行 or 拒绝</strong>: 根据审批结果走不同分支</li>
+</ol>
+
+<h2>演示 3: 多步工单流程</h2>
+
+<pre><code>分类 → ⏸️ 技术审批 → 修复 → 关闭 → END</code></pre>
+
+<p>工单处理流程演示了 Checkpoints 的价值——每个步骤之后图状态都被持久化，即使服务重启也能从中断点继续。</p>
+
+<h2>执行模式图解</h2>
+
+<pre><code>
+invoke 1:  START → triage → ⏸️ interrupt (挂起)
+                              │
+              返回挂起状态给调用方
+                              │
+invoke 2:                  Command({resume: "approve"})
+                              │
+                           fix → close → END ✅
+</code></pre>
+
+<h2>生产环境注意事项</h2>
+
+<table style="width:100%; border-collapse:collapse; margin-bottom:1.2rem;">
+  <tr style="border-bottom:2px solid var(--border); text-align:left;">
+    <th style="padding:0.5rem 0.75rem;">注意点</th>
+    <th style="padding:0.5rem 0.75rem;">说明</th>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;">Checkpointer 选择</td>
+    <td style="padding:0.5rem 0.75rem;">MemorySaver 只适合开发/测试。生产环境用 PostgresSaver 或 SqliteSaver</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;">interrupt 的返回值类型</td>
+    <td style="padding:0.5rem 0.75rem;">可以是字符串（简单审批）、对象（多字段表单）、甚至文件</td>
+  </tr>
+  <tr>
+    <td style="padding:0.5rem 0.75rem;">超时处理</td>
+    <td style="padding:0.5rem 0.75rem;">挂起状态不会自动超时。需要在应用层实现超时逻辑（定时检查 + 自动拒绝/升级）</td>
+  </tr>
+</table>
+
+<h2>知识检查</h2>
+
+<div class="quiz" id="q1">
+  <div class="question">1. interrupt() 在图节点的内部做了什么？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 抛出一个异常，让调用方捕获</div>
+    <div class="option" data-value="b">B. 返回一个特殊值给调用方，下次 invoke 时从同一位置继续执行</div>
+    <div class="option" data-value="c">C. 休眠当前线程，等待 setTimeout 触发</div>
+    <div class="option" data-value="d">D. 将当前节点标记为「待定」，让下一个节点处理</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q2">
+  <div class="question">2. 为什么需要 MemorySaver checkpointer？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 它是 interrupt 能工作的前提——图状态需要被持久化才能跨 invoke 恢复</div>
+    <div class="option" data-value="b">B. 它是 LangGraph v2 的强制要求，不传会编译失败</div>
+    <div class="option" data-value="c">C. 它提供内存优化，减少 token 消耗</div>
+    <div class="option" data-value="d">D. 它是 DeepSeek API 的兼容性补丁</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q3">
+  <div class="question">3. 一个 thread_id 关联了两次 invoke，第二次用 Command 恢复后，图从哪里开始执行？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 从 START 重新执行整个图</div>
+    <div class="option" data-value="b">B. 从 interrupt() 调用的下一行代码继续，interrupt() 返回 Command 中的 resume 值</div>
+    <div class="option" data-value="c">C. 跳过 interrupt 所在的节点，直接从下一个节点开始</div>
+    <div class="option" data-value="d">D. 从最后一个 executed 节点重新执行</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<script>
+(function() {
+  const answers = {
+    q1: { correct: "b", explanation: "正确！interrupt 不是抛异常或休眠——它返回一个 GraphInterrupt 值给调用方，图状态被 checkpointer 保存。下次用相同 thread_id invoke 时，图从 interrupt 后面继续，interrupt() 返回 Command 中的 resume 值。" },
+    q2: { correct: "a", explanation: "正确！没有 checkpointer，图的状态只在单次 invoke 内存活。interrupt 挂起后，第二次 invoke 需要从上次的状态继续——这要求状态被持久化。MemorySaver 存在内存中，生产环境用数据库版。" },
+    q3: { correct: "b", explanation: "正确！interrupt() 相当于一个「断点」——恢复后从断点继续。Command({ resume: "approve" }) 中的 "approve" 就是 interrupt() 的返回值。代码继续执行 interrupt 下面的逻辑。" }
+  };
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const info = answers[quiz.id];
+    const options = quiz.querySelectorAll('.option');
+    const feedback = quiz.querySelector('.feedback');
+    options.forEach(opt => {
+      opt.addEventListener('click', () => {
+        if (opt.classList.contains('correct') || opt.classList.contains('incorrect')) return;
+        options.forEach(o => { o.classList.remove('selected', 'correct', 'incorrect'); });
+        opt.classList.add('selected');
+        if (opt.dataset.value === info.correct) {
+          opt.classList.add('correct');
+          feedback.className = 'feedback correct show';
+        } else {
+          opt.classList.add('incorrect');
+          feedback.className = 'feedback incorrect show';
+          options.forEach(o => { if (o.dataset.value === info.correct) o.classList.add('correct'); });
+        }
+        feedback.innerHTML = info.explanation;
+      });
+    });
+  });
+})();
+</script>
+
+<h2>推荐阅读</h2>
+<ul>
+  <li><a href="https://docs.langchain.com/oss/javascript/langgraph/human-in-the-loop">LangGraph.js 官方文档 — Human-in-the-loop</a></li>
+  <li><a href="https://github.com/langchain-ai/langgraphjs">LangGraph.js GitHub — persistence & streaming</a></li>
+</ul>
+
+<div class="callout tip">
+<strong>下一步：</strong>Human-in-the-loop 是 LangGraph 最强大的生产特性之一。结合 Checkpoints 持久化，你可以构建真正的企业级审批工作流。有任何疑惑随时问。
+</div>
+
+<hr style="margin:2rem 0 1rem; border:none; border-top:1px solid var(--border);">
+
+<div class="lesson-nav">
+  <a href="09-multi-agent.html">← 上一课: 09 多 Agent 协作</a>
+  <span>LangGraph 进阶系列！</span>
+</div>
+
+</body>
+</html>

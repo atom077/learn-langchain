@@ -15,6 +15,7 @@ learn-langchain/
 ├── 07-langgraph-intro.ts      # Lesson 07: LangGraph 入门 — 有状态工作流
 ├── 08-langgraph-agent.ts      # Lesson 08: LangGraph Agent — LLM + Tool 节点
 ├── 09-multi-agent.ts           # Lesson 09: 多 Agent 协作 — Pipeline/Router/Supervisor
+├── 10-human-in-the-loop.ts     # Lesson 10: Human-in-the-loop — interrupt/Command
 └── lessons/                   # 课程 HTML 页面（含交互式测验）
     ├── 01-first-agent.html
     ├── 02-agent-internals.html
@@ -25,6 +26,7 @@ learn-langchain/
     ├── 07-langgraph-intro.html
     ├── 08-langgraph-agent.html
     ├── 09-multi-agent.html
+    ├── 10-human-in-the-loop.html
     ├── tool-design-reference.html
     └── style.css
 ```
@@ -57,6 +59,7 @@ npm run demo:06        # 课 06: 实战项目
 npm run demo:07        # 课 07: LangGraph 入门
 npm run demo:08        # 课 08: LangGraph Agent
 npm run demo:09        # 课 09: 多 Agent 协作
+npm run demo:10        # 课 10: Human-in-the-loop
 ```
 
 ## 学习路线
@@ -72,6 +75,7 @@ npm run demo:09        # 课 09: 多 Agent 协作
 | 07 | LangGraph 入门 | StateGraph、Annotation、条件分支、状态管理 |
 | 08 | LangGraph Agent | LLM 节点 + 工具节点、手动 ReAct、注入审核/日志 |
 | 09 | 多 Agent 协作 | Pipeline、Router、Supervisor 三种协作模式 |
+| 10 | Human-in-the-loop | interrupt + Command、MemorySaver、审批工作流 |
 
 ## 环境变量
 
