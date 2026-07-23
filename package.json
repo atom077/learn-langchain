@@ -14,7 +14,8 @@
     "demo:07": "tsx 07-langgraph-intro.ts",
     "demo:08": "tsx 08-langgraph-agent.ts",
     "demo:09": "tsx 09-multi-agent.ts",
-    "demo:10": "tsx 10-human-in-the-loop.ts"
+    "demo:10": "tsx 10-human-in-the-loop.ts",
+    "demo:11": "tsx 11-long-term-memory.ts"
   },
   "keywords": [],
   "author": "",

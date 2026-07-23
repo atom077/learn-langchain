@@ -378,6 +378,8 @@ const supervisorNode = async (state: typeof SupervisorState.State) => {
   const doneWork = state.workerResults.length > 0
     ? `\n工人已完成的工作:\n${state.workerResults.join("\n")}\n`
     : "";
+  // console.error('>>>doneWork', doneWork);
+  
   const planPrompt = `你是项目主管。用户的问题是: "${userMsg?.content}"${doneWork}
 你需要将任务分派给专业工人。可用的工人:
 - search_docs: 搜索技术文档（架构、部署、团队等）
@@ -394,6 +396,9 @@ const supervisorNode = async (state: typeof SupervisorState.State) => {
   const planResponse = await model.invoke([
     { role: "system", content: planPrompt },
   ]);
+  // console.log('>>>planPrompt');
+  // console.log(planPrompt);
+  // console.log('>>>planResponse', planResponse.content);
 
   const plan = (planResponse.content as string).toLowerCase();
   console.log(`  👔 主管计划: ${plan}`);
@@ -496,11 +501,13 @@ const supervisorGraph = new StateGraph(SupervisorState)
   })
   .compile();
 
+const r3UserInput = "我们的 AI 平台架构是怎样的？当前有多少团队成员？计算 256 * 128 的结果是多少？";
+console.log(`\n  💬 用户问题: ${r3UserInput}`);
 const r3 = await supervisorGraph.invoke({
   messages: [
     {
       role: "user",
-      content: "我们的 AI 平台架构是怎样的？当前有多少团队成员？",
+      content: r3UserInput,
     },
   ],
   workerResults: [],

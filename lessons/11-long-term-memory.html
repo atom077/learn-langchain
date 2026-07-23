@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 11 — 长期记忆：Store API 与跨线程持久化</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>Lesson 11: 长期记忆 — Store API 与跨线程持久化</h1>
+
+<div class="lesson-meta">
+  <span>📅 2026-07-23</span>
+  <span>⏱ ~25 分钟</span>
+  <span>🎯 用 LangGraph Store 构建跨会话、跨线程的持久化记忆系统</span>
+  <span>📎 课前要求: <a href="05-memory.html">Lesson 05 Memory</a> + <a href="10-human-in-the-loop.html">Lesson 10 Human-in-the-loop</a></span>
+</div>
+
+<h2>你将要学会的</h2>
+<ol>
+  <li><strong>Store API</strong> — put/get/search，二级命名空间键值存储</li>
+  <li><strong>Memory 生命周期</strong> — Load(加载记忆) → Use(Agent使用) → Extract(提取新事实) → Save(持久化)</li>
+  <li><strong>跨线程记忆共享</strong> — 不同对话线程共享同一个 Store 中的长期记忆</li>
+</ol>
+
+<h2>回顾：Lesson 05 的 Memory 是短期的</h2>
+
+<p>Lesson 05 教的 Buffer/Window/Summary Memory 都是<strong>消息级别的短期记忆</strong>——它存在于 State.messages 数组中，依赖 checkpointer 持久化，生命周期绑定到一个 thread_id。</p>
+
+<ul>
+  <li>换个对话 → 记忆丢失</li>
+  <li>服务重启（没有持久化 checkpointer）→ 记忆丢失</li>
+  <li>想记住"用户喜欢简洁风格"——只能靠 Summary，不精确</li>
+</ul>
+
+<div class="callout">
+<strong>Store API 是真正的长期记忆。</strong>它独立于对话线程——一个 Store 可以被所有线程共享。用户档案、偏好、提取的事实，都是 Store 的典型用途。
+</div>
+
+<h2>先跑代码</h2>
+
+<pre><code>cd learn-langchain
+npx tsx 11-long-term-memory.ts</code></pre>
+
+<h2>核心 API</h2>
+
+<table style="width:100%; border-collapse:collapse; margin-bottom:1.2rem;">
+  <tr style="border-bottom:2px solid var(--border); text-align:left;">
+    <th style="padding:0.5rem 0.75rem;">API</th>
+    <th style="padding:0.5rem 0.75rem;">参数</th>
+    <th style="padding:0.5rem 0.75rem;">说明</th>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><code>store.put(namespace, key, value)</code></td>
+    <td style="padding:0.5rem 0.75rem;">["users","001"], "profile", {...}</td>
+    <td style="padding:0.5rem 0.75rem;">写入或更新数据</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><code>store.get(namespace, key)</code></td>
+    <td style="padding:0.5rem 0.75rem;">["users","001"], "profile"</td>
+    <td style="padding:0.5rem 0.75rem;">精确读取一条数据</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><code>store.search(namespace, opts)</code></td>
+    <td style="padding:0.5rem 0.75rem;">["users"], {limit: 10}</td>
+    <td style="padding:0.5rem 0.75rem;">按命名空间前缀搜索</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><code>store.delete(namespace, key)</code></td>
+    <td style="padding:0.5rem 0.75rem;">["users","001"], "profile"</td>
+    <td style="padding:0.5rem 0.75rem;">删除一条数据</td>
+  </tr>
+  <tr>
+    <td style="padding:0.5rem 0.75rem;"><code>getStore()</code></td>
+    <td style="padding:0.5rem 0.75rem;">—</td>
+    <td style="padding:0.5rem 0.75rem;">在节点内部获取 Store 实例</td>
+  </tr>
+</table>
+
+<h2>命名空间设计</h2>
+
+<pre><code>// Store 用 namespace + key 两级来组织数据
+store.put(["users", "user-001"], "profile", {...})
+//      ─────── namespace ──────  ── key ──
+
+// 推荐的分层结构:
+["users",    "&lt;id&gt;"]              → 用户档案
+["users",    "&lt;id&gt;", "facts"]     → 从对话中提取的事实
+["users",    "&lt;id&gt;", "prefs"]     → 用户偏好
+["org",      "products"]          → 组织/产品信息
+["sessions", "&lt;id&gt;", "summary"]   → 会话摘要</code></pre>
+
+<div class="callout tip">
+<strong>search 的巧妙之处：</strong><code>store.search(["users"])</code> 返回所有用户的数据——因为 namespace 前缀匹配。这让你可以"列出所有用户"而不需要单独维护一个索引。
+</div>
+
+<h2>演示 2: Memory 生命周期</h2>
+
+<p>每个请求经过四个阶段，形成一个闭环：</p>
+
+<pre><code>      ┌──────────────────────────────────────┐
+      │            Memory 生命周期             │
+      │                                      │
+      │  1. LOAD                             │
+      │  ┌──────────────────────┐            │
+      │  │ getStore().get()     │            │
+      │  │ 读取用户档案+事实     │            │
+      │  └──────┬───────────────┘            │
+      │         │ 注入 system prompt          │
+      │         ▼                            │
+      │  2. USE                              │
+      │  ┌──────────────────────┐            │
+      │  │ Agent 使用记忆上下文   │            │
+      │  │ 个性化回复            │            │
+      │  └──────┬───────────────┘            │
+      │         │                            │
+      │         ▼                            │
+      │  3. EXTRACT                          │
+      │  ┌──────────────────────┐            │
+      │  │ LLM 从对话中提取新事实  │            │
+      │  │ "我今天学了 Rust" → 事实 │           │
+      │  └──────┬───────────────┘            │
+      │         │                            │
+      │         ▼                            │
+      │  4. SAVE                             │
+      │  ┌──────────────────────┐            │
+      │  │ store.put() 持久化    │            │
+      │  │ 新事实追加到 facts[]   │            │
+      │  └──────────────────────┘            │
+      └──────────────────────────────────────┘</code></pre>
+
+<p>运行结果验证了闭环：4 轮对话后，用户的已知事实从 3 条增长到 5 条——"学了 Rust"和"下周做 Q3 Review PPT"都被 LLM 自动提取并持久化。</p>
+
+<h2>演示 3: 跨线程共享</h2>
+
+<pre><code>              ┌─────────────────┐
+              │   Shared Store  │ ← 全局唯一
+              │                 │
+              │ users/xiaoming  │
+              │ org/products    │
+              │ org/policies    │
+              └───┬───────┬─────┘
+                  │       │
+          ┌───────┘       └───────┐
+          ▼                       ▼
+    ┌───────────┐          ┌───────────┐
+    │ Thread A  │          │ Thread B  │
+    │ thread_a  │          │ thread_b  │
+    │           │          │           │
+    │ "产品上线  │          │ "远程办公  │
+    │  时间?"   │          │  政策?"   │
+    └───────────┘          └───────────┘
+    两个独立对话，共享同一份组织知识</code></pre>
+
+<h2>短期记忆 vs 长期记忆</h2>
+
+<table style="width:100%; border-collapse:collapse; margin-bottom:1.2rem;">
+  <tr style="border-bottom:2px solid var(--border); text-align:left;">
+    <th style="padding:0.5rem 0.75rem;"></th>
+    <th style="padding:0.5rem 0.75rem;">短期记忆 (Messages)</th>
+    <th style="padding:0.5rem 0.75rem;">长期记忆 (Store)</th>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>存储</strong></td>
+    <td style="padding:0.5rem 0.75rem;">State.messages 数组</td>
+    <td style="padding:0.5rem 0.75rem;">Store put/get/search</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>生命周期</strong></td>
+    <td style="padding:0.5rem 0.75rem;">单线程内</td>
+    <td style="padding:0.5rem 0.75rem;">跨线程、跨会话</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>数据类型</strong></td>
+    <td style="padding:0.5rem 0.75rem;">LLM 消息</td>
+    <td style="padding:0.5rem 0.75rem;">任意 JSON</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;"><strong>典型用途</strong></td>
+    <td style="padding:0.5rem 0.75rem;">当前对话上下文</td>
+    <td style="padding:0.5rem 0.75rem;">档案、偏好、事实</td>
+  </tr>
+  <tr>
+    <td style="padding:0.5rem 0.75rem;"><strong>类比</strong></td>
+    <td style="padding:0.5rem 0.75rem;">工作记忆</td>
+    <td style="padding:0.5rem 0.75rem;">长期记忆</td>
+  </tr>
+</table>
+
+<h2>知识检查</h2>
+
+<div class="quiz" id="q1">
+  <div class="question">1. Store 和 Messages (State.messages) 的本质区别是什么？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. Store 只能存储字符串，Messages 可以存对象</div>
+    <div class="option" data-value="b">B. Messages 绑定到一个对话线程，Store 独立于线程，可跨线程共享</div>
+    <div class="option" data-value="c">C. Store 需要数据库支持，Messages 只需要内存</div>
+    <div class="option" data-value="d">D. Messages 是 LangGraph 提供的，Store 是 LangChain 提供的</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q2">
+  <div class="question">2. getStore() 在 LangGraph 节点中的作用是什么？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 获取当前节点的执行状态（运行中、挂起、完成）</div>
+    <div class="option" data-value="b">B. 获取绑定到当前图的 Store 实例，用于读写长期记忆</div>
+    <div class="option" data-value="c">C. 获取前一个节点的输出结果</div>
+    <div class="option" data-value="d">D. 获取全局的 TypeScript 状态管理器</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q3">
+  <div class="question">3. Memory 生命周期的正确顺序是什么？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. Extract → Save → Load → Use</div>
+    <div class="option" data-value="b">B. Save → Load → Use → Extract</div>
+    <div class="option" data-value="c">C. Load → Use → Extract → Save</div>
+    <div class="option" data-value="d">D. Use → Load → Save → Extract</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<script>
+(function() {
+  const answers = {
+    q1: { correct: "b", explanation: "正确！Messages 是对话线程内的上下文（短期/工作记忆），Store 独立于任何线程（长期/持久记忆）。一个 Store 实例可以被所有对话线程共享——Thread A 写的用户偏好，Thread B 可以读到。" },
+    q2: { correct: "b", explanation: "正确！getStore() 返回图编译时传入的 store 实例。节点内部通过它调用 store.get()/put()/search() 来读写长期记忆。没有它，节点无法访问 Store。" },
+    q3: { correct: "c", explanation: "正确！先 Load（加载已有记忆）→ Use（Agent 在上下文中使用）→ Extract（从对话中提取新信息）→ Save（持久化新记忆）。这个循环让记忆随着每次对话自动增长。" }
+  };
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const info = answers[quiz.id];
+    const options = quiz.querySelectorAll('.option');
+    const feedback = quiz.querySelector('.feedback');
+    options.forEach(opt => {
+      opt.addEventListener('click', () => {
+        if (opt.classList.contains('correct') || opt.classList.contains('incorrect')) return;
+        options.forEach(o => { o.classList.remove('selected', 'correct', 'incorrect'); });
+        opt.classList.add('selected');
+        if (opt.dataset.value === info.correct) {
+          opt.classList.add('correct');
+          feedback.className = 'feedback correct show';
+        } else {
+          opt.classList.add('incorrect');
+          feedback.className = 'feedback incorrect show';
+          options.forEach(o => { if (o.dataset.value === info.correct) o.classList.add('correct'); });
+        }
+        feedback.innerHTML = info.explanation;
+      });
+    });
+  });
+})();
+</script>
+
+<h2>推荐阅读</h2>
+<ul>
+  <li><a href="https://docs.langchain.com/oss/javascript/langgraph/persistence">LangGraph.js — Persistence & Store</a></li>
+  <li><a href="https://github.com/langchain-ai/langgraphjs">LangGraph.js GitHub — Store examples</a></li>
+</ul>
+
+<div class="callout tip">
+<strong>下一步：</strong>长期记忆是构建个性化 AI 助手的基石——用户档案、偏好、学习历史，都是 Store 的典型应用。生产环境中用 PostgresStore 替换 InMemoryStore，记忆就能真正持久化。
+</div>
+
+<hr style="margin:2rem 0 1rem; border:none; border-top:1px solid var(--border);">
+
+<div class="lesson-nav">
+  <a href="10-human-in-the-loop.html">← 上一课: 10 Human-in-the-loop</a>
+  <span>LangGraph 进阶系列！</span>
+</div>
+
+</body>
+</html>
