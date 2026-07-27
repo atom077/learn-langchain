@@ -15,7 +15,8 @@
     "demo:08": "tsx 08-langgraph-agent.ts",
     "demo:09": "tsx 09-multi-agent.ts",
     "demo:10": "tsx 10-human-in-the-loop.ts",
-    "demo:11": "tsx 11-long-term-memory.ts"
+    "demo:11": "tsx 11-long-term-memory.ts",
+    "demo:12": "tsx 12-mem0-comparison.ts"
   },
   "keywords": [],
   "author": "",
@@ -28,6 +29,7 @@
     "@langchain/openai": "^1.5.4",
     "dotenv": "^16.4.7",
     "langchain": "^1.0.0",
+    "mem0ai": "^3.1.2",
     "zod": "^3.24.0",
     "zod-to-json-schema": "^3.25.2"
   },

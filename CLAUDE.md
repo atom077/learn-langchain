@@ -29,6 +29,7 @@ npm run demo:08          # 运行课 08（LangGraph Agent）
 npm run demo:09          # 运行课 09（多 Agent 协作）
 npm run demo:10          # 运行课 10（Human-in-the-loop）
 npm run demo:11          # 运行课 11（长期记忆）
+npm run demo:12          # 运行课 12（Mem0 对比实验）
 npx tsx <file>.ts        # 运行任意演示文件
 ```
 
