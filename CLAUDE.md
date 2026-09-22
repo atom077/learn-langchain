@@ -9,7 +9,7 @@ LangChain.js 学习项目，用于教学演示和技能练习。
 ## 项目约定
 
 - TypeScript 源码，使用 `tsx` 运行（无需编译）
-- 模型：DeepSeek (deepseek-chat)，通过 `@langchain/openai` 的 `ChatOpenAI` + 自定义 `baseURL` 接入
+- 模型：DeepSeek (deepseek-v4-flash)，通过 `@langchain/openai` 的 `ChatOpenAI` + 自定义 `baseURL` 接入
 - API Key 通过 `.env` 文件配置，不硬编码
 - 每个 `.ts` 文件是独立的演示，可直接 `npx tsx <file>.ts` 运行
 - 文件命名：`<编号>-<描述>.ts`，编号对应课程编号

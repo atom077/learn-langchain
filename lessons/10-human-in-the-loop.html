@@ -196,7 +196,7 @@ invoke 2:                  Command({resume: "approve"})
   const answers = {
     q1: { correct: "b", explanation: "正确！interrupt 不是抛异常或休眠——它返回一个 GraphInterrupt 值给调用方，图状态被 checkpointer 保存。下次用相同 thread_id invoke 时，图从 interrupt 后面继续，interrupt() 返回 Command 中的 resume 值。" },
     q2: { correct: "a", explanation: "正确！没有 checkpointer，图的状态只在单次 invoke 内存活。interrupt 挂起后，第二次 invoke 需要从上次的状态继续——这要求状态被持久化。MemorySaver 存在内存中，生产环境用数据库版。" },
-    q3: { correct: "b", explanation: "正确！interrupt() 相当于一个「断点」——恢复后从断点继续。Command({ resume: "approve" }) 中的 "approve" 就是 interrupt() 的返回值。代码继续执行 interrupt 下面的逻辑。" }
+    q3: { correct: "b", explanation: "正确！interrupt() 相当于一个「断点」——恢复后从断点继续。Command({ resume: \"approve\" }) 中的 \"approve\" 就是 interrupt() 的返回值。代码继续执行 interrupt 下面的逻辑。" }
   };
   document.querySelectorAll('.quiz').forEach(quiz => {
     const info = answers[quiz.id];

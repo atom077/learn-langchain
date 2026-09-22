@@ -12,7 +12,7 @@ import {
 } from "@langchain/langgraph";
 
 const model = new ChatOpenAI({
-  model: "deepseek-chat",
+  model: "deepseek-v4-flash",
   apiKey: process.env.DEEPSEEK_API_KEY,
   configuration: { baseURL: "https://api.deepseek.com/v1" },
 });

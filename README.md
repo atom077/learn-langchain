@@ -39,7 +39,7 @@ learn-langchain/
 
 - **Runtime**: Node.js 20+, TypeScript
 - **框架**: [LangChain.js](https://github.com/langchain-ai/langchainjs) v1.x (Agent-first API)
-- **模型**: DeepSeek (deepseek-chat) via `@langchain/openai`
+- **模型**: DeepSeek (deepseek-v4-flash) via `@langchain/openai`
 - **Schema 校验**: Zod
 - **运行工具**: tsx
 

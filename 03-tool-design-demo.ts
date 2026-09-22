@@ -6,7 +6,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 
 // ---- 配置 DeepSeek 模型 ----
 const model = new ChatOpenAI({
-  model: "deepseek-chat",
+  model: "deepseek-v4-flash",
   apiKey: process.env.DEEPSEEK_API_KEY,
   configuration: { baseURL: "https://api.deepseek.com/v1" },
 });

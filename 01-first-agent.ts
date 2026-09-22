@@ -6,7 +6,7 @@ import { z } from "zod";
 // ---- 配置 DeepSeek 模型 ----
 // DeepSeek 提供 OpenAI 兼容 API（这个端点更成熟稳定）
 const model = new ChatOpenAI({
-  model: "deepseek-chat", // DeepSeek-V3 对话模型
+  model: "deepseek-v4-flash", // DeepSeek-V3 对话模型
   apiKey: process.env.DEEPSEEK_API_KEY,
   configuration: {
     baseURL: "https://api.deepseek.com/v1",
