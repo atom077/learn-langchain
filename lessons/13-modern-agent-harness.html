@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 13 — 现代 Agent Harness 与 Middleware</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>Lesson 13: 现代 Agent Harness 与 Middleware</h1>
+
+<div class="lesson-meta">
+  <span>2026-09-22</span>
+  <span>约 20 分钟</span>
+  <span>目标：掌握 Agent loop 的扩展边界</span>
+  <span>前置：<a href="01-first-agent.html">Lesson 01</a>、<a href="12-mem0-comparison.html">Lesson 12</a></span>
+</div>
+
+<h2>本课的一个胜利</h2>
+
+<p>你会写出一个 Middleware，让 Agent 在每次模型调用前自动记录次数，并把本次请求的用户上下文注入 system message。这个能力是重试、限流、路由、审计、PII 检测和动态提示词的共同基础。</p>
+
+<div class="callout">
+<strong>官方当前心智模型：</strong>Agent = Model + Harness。模型负责“下一步生成什么”，harness 负责“给它什么上下文、哪些工具，以及调用前后允许插入什么控制逻辑”。<a href="https://docs.langchain.com/oss/javascript/langchain/overview">官方 Overview</a>
+</div>
+
+<h2>先看 Agent loop</h2>
+
+<pre><code>invoke(input, context)
+  │
+  ├─ beforeAgent       一次：初始化或校验
+  ├─ beforeModel       每次模型调用前
+  ├─ wrapModelCall     包住模型调用
+  ├─ model             返回回答或 tool_calls
+  ├─ afterModel        每次模型调用后
+  ├─ tools             如果有工具调用，执行后再次回到模型
+  └─ afterAgent        一次：收尾
+</code></pre>
+
+<p>模型第一次返回 <code>tool_calls</code> 时，Agent 不会结束，而是执行工具，再把工具结果送回模型。因此“每次模型调用”可能发生多次；这正是 <code>beforeModel</code> 与 <code>wrapModelCall</code> 的区别重点。</p>
+
+<h2>两种 Middleware hook</h2>
+
+<table style="width:100%; border-collapse:collapse; margin-bottom:1.2rem;">
+  <tr style="border-bottom:2px solid var(--border); text-align:left;">
+    <th style="padding:0.5rem 0.75rem;">类型</th>
+    <th style="padding:0.5rem 0.75rem;">Hook</th>
+    <th style="padding:0.5rem 0.75rem;">最适合</th>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;">Node-style</td>
+    <td style="padding:0.5rem 0.75rem;"><code>beforeAgent</code>、<code>beforeModel</code>、<code>afterModel</code>、<code>afterAgent</code></td>
+    <td style="padding:0.5rem 0.75rem;">校验、日志、状态更新</td>
+  </tr>
+  <tr>
+    <td style="padding:0.5rem 0.75rem;">Wrap-style</td>
+    <td style="padding:0.5rem 0.75rem;"><code>wrapModelCall</code>、<code>wrapToolCall</code></td>
+    <td style="padding:0.5rem 0.75rem;">修改请求、重试、回退、鉴权、缓存</td>
+  </tr>
+</table>
+
+<p>Node-style hook 直接返回 state 更新；Wrap-style hook 拿到 <code>request</code> 与 <code>handler</code>，决定是否以及如何继续调用下一个环节。当前官方文档把 Middleware 描述为控制 Agent 执行的扩展机制，详见 <a href="https://docs.langchain.com/oss/javascript/langchain/middleware/overview">Middleware overview</a> 和 <a href="https://docs.langchain.com/oss/javascript/langchain/middleware/custom">Custom middleware</a>。</p>
+
+<h2>State 与 Context：不要混用</h2>
+
+<pre><code>state   = Agent 执行中产生的状态，可由 checkpointer 跨调用保存
+context = 本次 invoke 的只读元数据，不会自动持久化
+
+state:   messages, modelCallCount, workflowStep
+context: userId, tenantId, locale, requestId
+</code></pre>
+
+<p>在 Middleware 中，状态从 <code>state</code> 读取；运行时上下文从 <code>runtime.context</code> 读取。一个实用判断是：如果下一次调用还必须知道它，它更像 state；如果只是本次请求的身份、权限或配置，它更像 context。</p>
+
+<h2>动手：离线运行实验</h2>
+
+<pre><code>npm run demo:13</code></pre>
+
+<p>实验使用 LangChain 当前测试工具里的 <code>fakeModel()</code>，不访问模型 Provider。它会模拟“两次模型调用”：第一次请求工具，第二次生成最终回答。你应该看到：</p>
+
+<pre><code>[beforeModel] call=1 ...
+[wrapModelCall] 已注入本次 invoke 的 context
+[afterModel] last=ai
+[beforeModel] call=2 ...
+[wrapModelCall] 已注入本次 invoke 的 context
+[afterModel] last=ai
+
+[result] modelCallCount=2</code></pre>
+
+<p>打开 <a href="../13-middleware-demo.ts">13-middleware-demo.ts</a>，定位三个地方：</p>
+
+<ol>
+  <li><code>beforeModel</code> 把 <code>modelCallCount</code> 写回 state。</li>
+  <li><code>wrapModelCall</code> 用 <code>runtime.context</code> 改写本次模型请求。</li>
+  <li><code>fakeModel</code> 的两次响应证明工具调用会让 Agent 回到模型循环。</li>
+</ol>
+
+<h2>把实验改成你的版本</h2>
+
+<p>完成下面的最小练习，再回来告诉我结果：</p>
+
+<ol>
+  <li>把 <code>locale</code> 改成 <code>en-US</code>，让 Middleware 注入英文回复要求。</li>
+  <li>新增 <code>role: z.enum(["user", "admin"])</code> 到 context schema，并在 <code>wrapToolCall</code> 中禁止普通用户调用一个你新增的敏感工具。</li>
+  <li>解释：为什么 <code>userId</code> 不应该直接写进跨线程 state？</li>
+</ol>
+
+<h2>知识检查</h2>
+
+<div class="quiz" id="q1">
+  <div class="question">1. <code>wrapModelCall</code> 与 <code>beforeModel</code> 的主要区别是什么？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 一个包住调用，一个更新状态</div>
+    <div class="option" data-value="b">B. 一个只处理工具，一个只处理模型</div>
+    <div class="option" data-value="c">C. 一个只运行一次，一个永远不运行</div>
+    <div class="option" data-value="d">D. 一个保存消息，一个删除消息</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q2">
+  <div class="question">2. 哪类信息更适合放进 <code>runtime.context</code>？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 用户 ID 和租户信息</div>
+    <div class="option" data-value="b">B. 跨轮次的工具结果</div>
+    <div class="option" data-value="c">C. 当前线程的消息历史</div>
+    <div class="option" data-value="d">D. 工作流当前步骤</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" id="q3">
+  <div class="question">3. 为什么实验里的 <code>modelCallCount</code> 是 2？</div>
+  <div class="options">
+    <div class="option" data-value="a">A. 模型调用一次，工具调用一次</div>
+    <div class="option" data-value="b">B. 模型先请求工具，再生成回答</div>
+    <div class="option" data-value="c">C. Middleware 自动复制了一次请求</div>
+    <div class="option" data-value="d">D. Agent 默认永远调用两次模型</div>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<script>
+(function() {
+  const answers = {
+    q1: { correct: "a", explanation: "正确。beforeModel 是节点式 hook，常用于校验和返回 state 更新；wrapModelCall 是包裹式 hook，拿到 request 与 handler，可以修改请求、控制是否继续、实现重试或回退。" },
+    q2: { correct: "a", explanation: "正确。用户 ID、租户、角色、locale 等是本次调用的只读元数据，适合放在 context；消息、工具结果和工作流步骤属于执行状态，应该进入 state。" },
+    q3: { correct: "b", explanation: "正确。第一次模型调用返回 tool_calls，Agent 执行工具后再次调用模型，让模型根据工具结果生成最终回答，所以 beforeModel 和 wrapModelCall 各运行两次。" }
+  };
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const info = answers[quiz.id];
+    const options = quiz.querySelectorAll('.option');
+    const feedback = quiz.querySelector('.feedback');
+    options.forEach(opt => {
+      opt.addEventListener('click', () => {
+        if (opt.classList.contains('correct') || opt.classList.contains('incorrect')) return;
+        options.forEach(o => { o.classList.remove('selected', 'correct', 'incorrect'); });
+        opt.classList.add('selected');
+        if (opt.dataset.value === info.correct) {
+          opt.classList.add('correct');
+          feedback.className = 'feedback correct show';
+        } else {
+          opt.classList.add('incorrect');
+          feedback.className = 'feedback incorrect show';
+          options.forEach(o => { if (o.dataset.value === info.correct) o.classList.add('correct'); });
+        }
+        feedback.innerHTML = info.explanation;
+      });
+    });
+  });
+})();
+</script>
+
+<h2>推荐阅读</h2>
+
+<ul>
+  <li><a href="https://docs.langchain.com/oss/javascript/langchain/middleware/overview">Middleware overview</a>：先建立扩展点全景。</li>
+  <li><a href="https://docs.langchain.com/oss/javascript/langchain/middleware/custom">Custom middleware</a>：再查 hook、state schema 和 context schema 的细节。</li>
+  <li><a href="../reference/langchain-agent-harness.html">Agent Harness 速查</a>：复习本课的心智模型与 API 形状。</li>
+</ul>
+
+<div class="callout tip">
+<strong>下一步：</strong>先完成上面的三个改动，再把你的代码或运行输出贴给我。我会根据你的实现决定下一课是深入预置 Middleware，还是进入动态模型、结构化输出与工具策略。
+</div>
+
+<hr style="margin:2rem 0 1rem; border:none; border-top:1px solid var(--border);">
+
+<div class="lesson-nav">
+  <a href="12-mem0-comparison.html">上一课：12 Mem0 对比实验</a>
+  <a href="../reference/langchain-agent-harness.html">Agent Harness 速查 →</a>
+</div>
+
+</body>
+</html>

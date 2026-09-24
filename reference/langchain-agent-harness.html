@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LangChain.js Agent Harness 速查</title>
+<link rel="stylesheet" href="../lessons/style.css">
+</head>
+<body>
+
+<h1>LangChain.js Agent Harness 速查</h1>
+
+<p class="lesson-meta">配套课程：<a href="../lessons/13-modern-agent-harness.html">Lesson 13 — Agent Harness 与 Middleware</a></p>
+
+<h2>一句话模型</h2>
+
+<div class="callout">
+<strong>Agent = Model + Harness。</strong>模型负责生成下一步，harness 负责把合适的 prompt、tools、state、context 和 Middleware 组织到每次调用周围。
+</div>
+
+<pre><code>invoke(input, context)
+  │
+  ├─ beforeAgent       一次：初始化或校验
+  ├─ beforeModel       每次模型调用前：更新 state
+  ├─ wrapModelCall     包住模型调用：改请求、重试、路由、记录
+  ├─ model             返回 AIMessage 或 tool_calls
+  ├─ afterModel        每次模型调用后：观察或更新 state
+  ├─ tools             执行工具，再回到 beforeModel
+  └─ afterAgent        一次：收尾
+</code></pre>
+
+<h2>State 与 Context</h2>
+
+<table style="width:100%; border-collapse:collapse; margin-bottom:1.2rem;">
+  <tr style="border-bottom:2px solid var(--border); text-align:left;">
+    <th style="padding:0.5rem 0.75rem;">维度</th>
+    <th style="padding:0.5rem 0.75rem;">State</th>
+    <th style="padding:0.5rem 0.75rem;">Context</th>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;">生命周期</td>
+    <td style="padding:0.5rem 0.75rem;">可跨调用持久化</td>
+    <td style="padding:0.5rem 0.75rem;">只属于本次 invoke</td>
+  </tr>
+  <tr style="border-bottom:1px solid var(--border);">
+    <td style="padding:0.5rem 0.75rem;">典型内容</td>
+    <td style="padding:0.5rem 0.75rem;">messages、计数、工作流字段</td>
+    <td style="padding:0.5rem 0.75rem;">用户 ID、租户、角色、请求元数据</td>
+  </tr>
+  <tr>
+    <td style="padding:0.5rem 0.75rem;">Middleware 读取</td>
+    <td style="padding:0.5rem 0.75rem;"><code>state</code></td>
+    <td style="padding:0.5rem 0.75rem;"><code>runtime.context</code></td>
+  </tr>
+</table>
+
+<h2>最小模板</h2>
+
+<pre><code>import { createAgent, createMiddleware } from "langchain";
+import { z } from "zod";
+
+const contextSchema = z.object({ userId: z.string() });
+
+const audit = createMiddleware({
+  name: "AuditMiddleware",
+  contextSchema,
+  stateSchema: z.object({ modelCalls: z.number().default(0) }),
+  beforeModel: (state, runtime) => {
+    console.log(runtime.context.userId);
+    return { modelCalls: state.modelCalls + 1 };
+  },
+  wrapModelCall: (request, handler) => handler(request),
+});
+
+const agent = createAgent({
+  model,
+  tools,
+  middleware: [audit],
+  contextSchema,
+});
+
+await agent.invoke(
+  { messages: [{ role: "user", content: "..." }] },
+  { context: { userId: "user-001" } },
+);</code></pre>
+
+<h2>选型速记</h2>
+
+<ul>
+  <li>只需要模型自主调用工具：从 <code>createAgent</code> 开始。</li>
+  <li>需要给循环增加横切能力：优先 Middleware。</li>
+  <li>需要显式节点、分支、并行、长流程：把 Agent 放进 LangGraph 工作流。</li>
+  <li>需要规划、文件系统、子 Agent 等成套能力：评估 Deep Agents。</li>
+</ul>
+
+<p>官方依据：<a href="https://docs.langchain.com/oss/javascript/langchain/agents">Agents</a>、<a href="https://docs.langchain.com/oss/javascript/langchain/middleware/overview">Middleware overview</a>、<a href="https://docs.langchain.com/oss/javascript/langchain/middleware/custom">Custom middleware</a>。</p>
+
+</body>
+</html>

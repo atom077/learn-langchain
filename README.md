@@ -1,6 +1,8 @@
 # Learn LangChain.js
 
-LangChain.js 系统学习项目 — 从零到掌握 Agent 开发，覆盖 Agent 架构、工具设计、RAG、对话记忆等核心模块。
+LangChain.js 深度学习项目 — 基于官方最新文档，从已有基础继续深入 Agent harness、核心组件、Middleware、LangGraph 和生产级高级用法。
+
+学习任务与课程状态见 [MISSION.md](MISSION.md)、[RESOURCES.md](RESOURCES.md) 和 [NOTES.md](NOTES.md)。
 
 ## 项目结构
 
@@ -18,6 +20,7 @@ learn-langchain/
 ├── 10-human-in-the-loop.ts     # Lesson 10: Human-in-the-loop — interrupt/Command
 ├── 11-long-term-memory.ts      # Lesson 11: 长期记忆 — Store API 跨线程持久化
 ├── 12-mem0-comparison.ts       # Lesson 12: Mem0 对比实验 — Store API vs Mem0
+├── 13-middleware-demo.ts       # Lesson 13: Agent Harness 与 Middleware（离线实验）
 └── lessons/                   # 课程 HTML 页面（含交互式测验）
     ├── 01-first-agent.html
     ├── 02-agent-internals.html
@@ -31,8 +34,14 @@ learn-langchain/
     ├── 10-human-in-the-loop.html
     ├── 11-long-term-memory.html
     ├── 12-mem0-comparison.html
+    ├── 13-modern-agent-harness.html
     ├── tool-design-reference.html
     └── style.css
+├── reference/                  # 可打印的概念与 API 速查
+├── learning-records/           # 学习状态与关键认知记录
+├── MISSION.md                  # 学习使命
+├── RESOURCES.md                # 官方资源清单
+└── NOTES.md                    # 教学备注
 ```
 
 ## 技术栈
@@ -66,6 +75,7 @@ npm run demo:09        # 课 09: 多 Agent 协作
 npm run demo:10        # 课 10: Human-in-the-loop
 npm run demo:11        # 课 11: 长期记忆
 npm run demo:12        # 课 12: Mem0 对比实验
+npm run demo:13        # 课 13: Agent Harness 与 Middleware（无需 API Key）
 ```
 
 ## 学习路线
@@ -84,6 +94,7 @@ npm run demo:12        # 课 12: Mem0 对比实验
 | 10 | Human-in-the-loop | interrupt + Command、MemorySaver、审批工作流 |
 | 11 | 长期记忆 | Store API(put/get/search)、Memory生命周期、跨线程共享 |
 | 12 | Mem0 对比实验 | Store API vs Mem0，同一场景两种实现，选型决策 |
+| 13 | Agent Harness 与 Middleware | Agent loop 扩展点、state/context、node-style 与 wrap-style hooks |
 
 ## 环境变量
 
@@ -94,5 +105,6 @@ npm run demo:12        # 课 12: Mem0 对比实验
 ## 相关资源
 
 - [LangChain.js 官方文档](https://docs.langchain.com/oss/javascript/langchain/overview)
+- [LangChain.js Middleware 官方文档](https://docs.langchain.com/oss/javascript/langchain/middleware/overview)
 - [Microsoft LangChain.js for Beginners](https://github.com/microsoft/langchainjs-for-beginners)
 - [LangChain.js GitHub](https://github.com/langchain-ai/langchainjs)

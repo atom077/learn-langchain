@@ -16,7 +16,8 @@
     "demo:09": "tsx 09-multi-agent.ts",
     "demo:10": "tsx 10-human-in-the-loop.ts",
     "demo:11": "tsx 11-long-term-memory.ts",
-    "demo:12": "tsx 12-mem0-comparison.ts"
+    "demo:12": "tsx 12-mem0-comparison.ts",
+    "demo:13": "tsx 13-middleware-demo.ts"
   },
   "keywords": [],
   "author": "",
