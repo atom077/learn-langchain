@@ -1,50 +1,23 @@
 # CLAUDE.md — learn-langchain
 
-LangChain.js 学习项目，用于教学演示和技能练习。
-
-> 本项目基于 Matt Pocock 的 [teach skill](https://github.com/mattpocock/skills/blob/main/skills/productivity/teach/SKILL.md) 教学框架构建。
-> 教学 workspace 位于 `~/.claude/skills/teach/`，包含 MISSION.md、GLOSSARY.md、学习记录等。
-> 课程 HTML 页面遵循 teach skill 的课程格式规范（Tufte 风格、知识检查、推荐阅读等）。
+本仓库是中文 LangChain.js / LangGraph 教学项目。项目的课程组织方式参考 Matt Pocock 的 [teach skill](https://github.com/mattpocock/skills/blob/main/skills/productivity/teach/SKILL.md)；贡献者无需安装该技能或任何特定编辑器。
 
 ## 项目约定
 
-- TypeScript 源码，使用 `tsx` 运行（无需编译）
-- 模型：DeepSeek (deepseek-v4-flash)，通过 `@langchain/openai` 的 `ChatOpenAI` + 自定义 `baseURL` 接入
-- API Key 通过 `.env` 文件配置，不硬编码
-- 每个 `.ts` 文件是独立的演示，可直接 `npx tsx <file>.ts` 运行
-- 文件命名：`<编号>-<描述>.ts`，编号对应课程编号
+- Node.js 22+，TypeScript ES modules，通过 `tsx` 运行；本地导入使用 `.js` 扩展名以兼容 NodeNext。
+- 每个编号 `.ts` 是独立演示；共享基础功能在 `src/`。课程编号与 npm scripts、HTML 讲义保持一致。
+- 中文讲解，保留官方 API 名称与英文代码标识。
+- API Key 和模型 ID 通过本地 `.env` 配置，在 `src/model.ts` 集中校验。
+- 不执行模型生成的代码，不提交密钥、真实个人数据或内部资料。
+- 第 12 课使用 Mem0 风格模拟器；不要把它描述为真实 SDK 集成。
+- 内存 Store/checkpointer 不提供进程重启后的持久化。
 
-## 常用命令
+## 验证
 
 ```bash
-npm install              # 安装依赖
-npm start                # 运行课 01
-npm run demo:02          # 运行课 02
-npm run demo:03          # 运行课 03
-npm run demo:04          # 运行课 04
-npm run demo:05          # 运行课 05
-npm run demo:06          # 运行课 06（实战项目）
-npm run demo:07          # 运行课 07（LangGraph 入门）
-npm run demo:08          # 运行课 08（LangGraph Agent）
-npm run demo:09          # 运行课 09（多 Agent 协作）
-npm run demo:10          # 运行课 10（Human-in-the-loop）
-npm run demo:11          # 运行课 11（长期记忆）
-npm run demo:12          # 运行课 12（Mem0 对比实验）
-npx tsx <file>.ts        # 运行任意演示文件
+npm ci
+npm run check
+npm run demo:13   # 离线，无需 API Key
 ```
 
-## 关键依赖
-
-- `@langchain/langgraph` — LangGraph.js（StateGraph、条件分支、多 Agent 编排）
-- `langchain` — 主框架（`createAgent`, `tool`）
-- `@langchain/openai` — OpenAI 兼容 ChatModel（用于 DeepSeek）
-- `zod` — Tool schema 定义
-- `dotenv` — 环境变量加载
-- `tsx` — TypeScript 执行器
-
-## 架构模式
-
-- **Agent-first**：所有功能以 Agent + Tool 的方式实现
-- **RAG via Tool**：检索封装为 `search_knowledge_base` tool，而非独立 Chain
-- **Memory via 消息数组管理**：手动维护消息历史，Buffer / Window / Summary 三种策略
-- **Graph-based workflows (LangGraph)**：显式定义节点、边、条件分支，构建有状态的 Agent 工作流
+其他课程通过 `npm run demo:01` 至 `npm run demo:12` 执行，需要真实配置且会产生费用。未经实际运行，不要声称在线验证通过。贡献说明见 [CONTRIBUTING.md](CONTRIBUTING.md)，来源见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

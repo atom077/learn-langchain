@@ -1,41 +1,62 @@
 {
   "name": "learn-langchain",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "中文 LangChain.js / LangGraph 实践课程：13 个 TypeScript 示例与交互式讲义",
   "scripts": {
-    "start": "tsx 01-first-agent.ts",
-    "demo:01": "tsx 01-first-agent.ts",
-    "demo:02": "tsx 02-stream-demo.ts",
-    "demo:03": "tsx 03-tool-design-demo.ts",
-    "demo:04": "tsx 04-rag-demo.ts",
-    "demo:05": "tsx 05-memory-demo.ts",
-    "demo:06": "tsx 06-capstone.ts",
-    "demo:07": "tsx 07-langgraph-intro.ts",
-    "demo:08": "tsx 08-langgraph-agent.ts",
-    "demo:09": "tsx 09-multi-agent.ts",
-    "demo:10": "tsx 10-human-in-the-loop.ts",
-    "demo:11": "tsx 11-long-term-memory.ts",
-    "demo:12": "tsx 12-mem0-comparison.ts",
-    "demo:13": "tsx 13-middleware-demo.ts"
+    "start": "node --import tsx 01-first-agent.ts",
+    "demo:01": "node --import tsx 01-first-agent.ts",
+    "demo:02": "node --import tsx 02-stream-demo.ts",
+    "demo:03": "node --import tsx 03-tool-design-demo.ts",
+    "demo:04": "node --import tsx 04-rag-demo.ts",
+    "demo:05": "node --import tsx 05-memory-demo.ts",
+    "demo:06": "node --import tsx 06-capstone.ts",
+    "demo:07": "node --import tsx 07-langgraph-intro.ts",
+    "demo:08": "node --import tsx 08-langgraph-agent.ts",
+    "demo:09": "node --import tsx 09-multi-agent.ts",
+    "demo:10": "node --import tsx 10-human-in-the-loop.ts",
+    "demo:11": "node --import tsx 11-long-term-memory.ts",
+    "demo:12": "node --import tsx 12-mem0-comparison.ts",
+    "demo:13": "node --import tsx 13-middleware-demo.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "check:docs": "node scripts/check-docs.mjs",
+    "check": "npm run typecheck && npm test && npm run check:docs && npm run demo:13"
   },
-  "keywords": [],
+  "keywords": [
+    "langchain",
+    "langgraph",
+    "typescript",
+    "agents",
+    "tutorial",
+    "chinese"
+  ],
   "author": "",
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "@langchain/anthropic": "^1.0.0",
     "@langchain/core": "^1.0.0",
     "@langchain/langgraph": "^1.4.8",
     "@langchain/openai": "^1.5.4",
     "dotenv": "^16.4.7",
     "langchain": "^1.0.0",
-    "mem0ai": "^3.1.2",
     "zod": "^3.24.0",
     "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
-  }
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/atom077/learn-langchain.git"
+  },
+  "bugs": {
+    "url": "https://github.com/atom077/learn-langchain/issues"
+  },
+  "homepage": "https://github.com/atom077/learn-langchain#readme"
 }

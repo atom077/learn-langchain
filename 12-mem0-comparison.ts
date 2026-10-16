@@ -1,5 +1,4 @@
-import "dotenv/config";
-import { ChatOpenAI } from "@langchain/openai";
+import { createDemoModel } from "./src/model.js";
 import {
   StateGraph,
   Annotation,
@@ -11,11 +10,7 @@ import {
   MemorySaver,
 } from "@langchain/langgraph";
 
-const model = new ChatOpenAI({
-  model: "deepseek-v4-flash",
-  apiKey: process.env.DEEPSEEK_API_KEY,
-  configuration: { baseURL: "https://api.deepseek.com/v1" },
-});
+const model = createDemoModel();
 
 // ============================================================
 // 场景: 个人助手 — 记住用户偏好，跨对话个性化回复
@@ -50,6 +45,7 @@ const StoreState = Annotation.Root({
 // 1. Load — 我们自己写逻辑
 const loadStoreNode = async (state: typeof StoreState.State) => {
   const st = getStore();
+  if (!st) throw new Error("当前图未配置 Store");
   const profile = await st.get(["users", "alice"], "profile");
   if (!profile) return { memoryContext: "" };
   const p = profile.value as any;
@@ -74,6 +70,7 @@ const respondStoreNode = async (state: typeof StoreState.State) => {
 // 3. Extract & Save — 我们自己写 LLM prompt 提取事实
 const extractStoreNode = async (state: typeof StoreState.State) => {
   const st = getStore();
+  if (!st) throw new Error("当前图未配置 Store");
   const profile = await st.get(["users", "alice"], "profile");
   if (!profile) return {};
   const p = profile.value as any;

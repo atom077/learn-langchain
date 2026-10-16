@@ -1,5 +1,6 @@
-import "dotenv/config";
-import { ChatOpenAI } from "@langchain/openai";
+import { toolOutputText } from "./src/tools.js";
+import { calculate } from "./src/calculator.js";
+import { createDemoModel } from "./src/model.js";
 import { tool } from "langchain";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
@@ -11,11 +12,7 @@ import {
   END,
 } from "@langchain/langgraph";
 
-const model = new ChatOpenAI({
-  model: "deepseek-v4-flash",
-  apiKey: process.env.DEEPSEEK_API_KEY,
-  configuration: { baseURL: "https://api.deepseek.com/v1" },
-});
+const model = createDemoModel();
 
 // ============================================================
 // 公共工具
@@ -23,8 +20,7 @@ const model = new ChatOpenAI({
 const calculator = tool(
   ({ expression }) => {
     try {
-      const s = expression.replace(/[^0-9+\-*/().%\s]/g, "");
-      return `计算结果: ${expression} = ${Function(`"use strict"; return (${s})`)()}`;
+      return `计算结果: ${expression} = ${calculate(expression)}`;
     } catch {
       return "计算失败";
     }
@@ -78,15 +74,16 @@ const toolDefs = allTools.map((t) => ({
 }));
 
 const toolMap: Record<string, (args: any) => Promise<string> | string> = {
-  calculator: (a) => calculator.invoke(a),
-  get_current_time: (a) => getCurrentTime.invoke(a),
-  search_docs: (a) => searchDocs.invoke(a),
+  calculator: async (a) => toolOutputText(await calculator.invoke(a)),
+  get_current_time: async (a) => toolOutputText(await getCurrentTime.invoke(a)),
+  search_docs: async (a) => toolOutputText(await searchDocs.invoke(a)),
 };
 
 // ---- 通用: 执行工具调用 ----
-async function executeTools(toolCalls: Array<{ name: string; args: any; id: string }>) {
+async function executeTools(toolCalls: Array<{ name: string; args: any; id?: string }>) {
   return Promise.all(
     toolCalls.map(async (tc) => {
+      if (!tc.id) throw new Error("模型返回的工具调用缺少 id");
       const fn = toolMap[tc.name];
       const output = fn ? await fn(tc.args) : `未知工具: ${tc.name}`;
       console.log(`     🔧 ${tc.name} → ${String(output).slice(0, 60)}`);

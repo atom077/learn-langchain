@@ -1,17 +1,14 @@
-import "dotenv/config";
+import { isAIMessage } from "@langchain/core/messages";
+import { calculate } from "./src/calculator.js";
 import * as readline from "node:readline";
 import { createAgent, tool } from "langchain";
-import { ChatOpenAI } from "@langchain/openai";
+import { createDemoModel } from "./src/model.js";
 import { z } from "zod";
 
 // ============================================================
 // 配置 DeepSeek 模型
 // ============================================================
-const model = new ChatOpenAI({
-  model: "deepseek-v4-flash",
-  apiKey: process.env.DEEPSEEK_API_KEY,
-  configuration: { baseURL: "https://api.deepseek.com/v1" },
-});
+const model = createDemoModel();
 
 // ============================================================
 // 个人知识库 (RAG)
@@ -24,6 +21,7 @@ interface Note {
   createdAt: string;
 }
 
+// 以下人物、会议、指标和个人笔记均为教学用虚构数据。
 const knowledgeBase: Note[] = [
   {
     id: 1,
@@ -184,8 +182,7 @@ const addNote = tool(
 const calculator = tool(
   ({ expression }) => {
     try {
-      const sanitized = expression.replace(/[^0-9+\-*/().%\s]/g, "");
-      const result = Function(`"use strict"; return (${sanitized})`)();
+      const result = calculate(expression);
       return JSON.stringify({ expression, result, success: true });
     } catch {
       return JSON.stringify({
@@ -234,7 +231,7 @@ const agent = createAgent({
 // ============================================================
 // Memory 管理: Summary + Window 混合策略
 // ============================================================
-interface Message {
+type Message = {
   role: "system" | "user" | "assistant";
   content: string;
 }
@@ -308,7 +305,7 @@ async function chat(userInput: string): Promise<string> {
 
     if (source === "model_request") {
       for (const msg of data.messages) {
-        if (msg._getType() === "ai") {
+        if (isAIMessage(msg)) {
           // AI 回复中的文本内容
           const text = typeof msg.content === "string" ? msg.content : "";
           if (text && !text.includes("tool_calls")) {

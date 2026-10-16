@@ -1,16 +1,10 @@
-import "dotenv/config";
+import { calculate } from "./src/calculator.js";
 import { createAgent, tool } from "langchain";
-import { ChatOpenAI } from "@langchain/openai";
+import { createDemoModel } from "./src/model.js";
 import { z } from "zod";
 
 // ---- 配置 DeepSeek 模型 ----
-const model = new ChatOpenAI({
-  model: "deepseek-v4-flash",
-  apiKey: process.env.DEEPSEEK_API_KEY,
-  configuration: {
-    baseURL: "https://api.deepseek.com/v1",
-  },
-});
+const model = createDemoModel();
 
 // ---- 工具 ----
 const getCurrentTime = tool(
@@ -24,7 +18,7 @@ const getCurrentTime = tool(
 
 const calculator = tool(
   ({ expression }) => {
-    const result = Function(`"use strict"; return (${expression})`)();
+    const result = calculate(expression);
     return JSON.stringify({ expression, result });
   },
   {

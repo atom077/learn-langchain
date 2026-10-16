@@ -1,5 +1,4 @@
-import "dotenv/config";
-import { ChatOpenAI } from "@langchain/openai";
+import { createDemoModel } from "./src/model.js";
 import {
   StateGraph,
   Annotation,
@@ -11,11 +10,7 @@ import {
 // ============================================================
 // 配置 DeepSeek 模型
 // ============================================================
-const model = new ChatOpenAI({
-  model: "deepseek-v4-flash",
-  apiKey: process.env.DEEPSEEK_API_KEY,
-  configuration: { baseURL: "https://api.deepseek.com/v1" },
-});
+const model = createDemoModel();
 
 // ============================================================
 // 演示 1: 最简单的 LangGraph — 一条直线
