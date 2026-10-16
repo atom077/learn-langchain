@@ -1,5 +1,4 @@
-import "dotenv/config";
-import { ChatOpenAI } from "@langchain/openai";
+import { createDemoModel } from "./src/model.js";
 import {
   StateGraph,
   Annotation,
@@ -11,11 +10,7 @@ import {
   MemorySaver,
 } from "@langchain/langgraph";
 
-const model = new ChatOpenAI({
-  model: "deepseek-v4-flash",
-  apiKey: process.env.DEEPSEEK_API_KEY,
-  configuration: { baseURL: "https://api.deepseek.com/v1" },
-});
+const model = createDemoModel();
 
 // ============================================================
 // 演示 1: Store API 基础 — 命名空间、增删查
@@ -106,6 +101,7 @@ const MemoryState = Annotation.Root({
 // 1️⃣ Load: 从 Store 加载用户记忆
 const loadNode = async (state: typeof MemoryState.State) => {
   const st = getStore();
+  if (!st) throw new Error("当前图未配置 Store");
   const profile = await st.get(["users", "current"], "profile");
   if (!profile) return { memoryContext: "" };
 
@@ -141,6 +137,7 @@ const respondNode = async (state: typeof MemoryState.State) => {
 // 3️⃣ Extract & Save: 从对话中提取新信息
 const saveNode = async (state: typeof MemoryState.State) => {
   const st = getStore();
+  if (!st) throw new Error("当前图未配置 Store");
   const profile = await st.get(["users", "current"], "profile");
   if (!profile) return {};
 
@@ -256,6 +253,7 @@ const CrossThreadState = Annotation.Root({
 // 节点: 从 sharedStore 加载组织知识 + 用户档案
 const crossLoadNode = async (state: typeof CrossThreadState.State) => {
   const st = getStore();
+  if (!st) throw new Error("当前图未配置 Store");
   const userProfile = await st.get(["users", "current"], "profile");
   const productInfo = await st.get(["org", "products"], "ai_platform");
 

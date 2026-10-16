@@ -11,7 +11,7 @@
 - 能为 Agent 加入重试、回退、限流、护栏、日志、追踪和评估，并解释每个决策。
 
 ## Constraints
-- 已具备 LangChain 基础认知，并已有 12 节 LangChain.js 实践课程。
+- 面向有 JavaScript/TypeScript 基础的读者；按课程导航选择起点。
 - 以 JavaScript/TypeScript 为主，课程优先使用可运行的本地实验。
 - 以 LangChain 官方最新文档为知识主线；每节课聚焦一个可验证的能力。
 - 使用中文讲解，保留官方 API 名称和代码中的英文标识。

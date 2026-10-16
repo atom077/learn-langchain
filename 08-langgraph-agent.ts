@@ -1,5 +1,6 @@
-import "dotenv/config";
-import { ChatOpenAI } from "@langchain/openai";
+import { toolOutputText } from "./src/tools.js";
+import { calculate } from "./src/calculator.js";
+import { createDemoModel } from "./src/model.js";
 import { tool } from "langchain";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
@@ -14,11 +15,7 @@ import {
 // ============================================================
 // 配置 DeepSeek 模型
 // ============================================================
-const model = new ChatOpenAI({
-  model: "deepseek-v4-flash",
-  apiKey: process.env.DEEPSEEK_API_KEY,
-  configuration: { baseURL: "https://api.deepseek.com/v1" },
-});
+const model = createDemoModel();
 
 // ============================================================
 // 定义工具（和 createAgent 的 tool 定义完全一样）
@@ -26,8 +23,7 @@ const model = new ChatOpenAI({
 const calculator = tool(
   ({ expression }) => {
     try {
-      const sanitized = expression.replace(/[^0-9+\-*/().%\s]/g, "");
-      const result = Function(`"use strict"; return (${sanitized})`)();
+      const result = calculate(expression);
       return `计算结果: ${expression} = ${result}`;
     } catch {
       return "计算失败，请检查表达式";
@@ -70,9 +66,9 @@ const getUserProfile = tool(
 );
 
 const toolsByName: Record<string, (args: any) => Promise<string> | string> = {
-  calculator: (args) => calculator.invoke(args),
-  get_current_time: (args) => getCurrentTime.invoke(args),
-  get_user_profile: (args) => getUserProfile.invoke(args),
+  calculator: async (args) => toolOutputText(await calculator.invoke(args)),
+  get_current_time: async (args) => toolOutputText(await getCurrentTime.invoke(args)),
+  get_user_profile: async (args) => toolOutputText(await getUserProfile.invoke(args)),
 };
 
 // 转换为 OpenAI function calling 格式
@@ -152,11 +148,11 @@ const toolNode = async (state: typeof MessagesAnnotation.State) => {
 };
 
 // 路由器：检查最后一条消息是否有 tool_calls，决定走 tools 还是 END
-function routeAfterLlm(state: typeof MessagesAnnotation.State): string {
+function routeAfterLlm(state: { messages: readonly unknown[] }): string {
   const lastMsg = state.messages[state.messages.length - 1] as {
     tool_calls?: Array<{ name: string }>;
   };
-  if (lastMsg.tool_calls?.length) {
+  if (lastMsg?.tool_calls?.length) {
     return "tools";
   }
   return END;

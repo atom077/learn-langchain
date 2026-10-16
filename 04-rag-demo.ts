@@ -1,14 +1,9 @@
-import "dotenv/config";
 import { createAgent, tool } from "langchain";
-import { ChatOpenAI } from "@langchain/openai";
+import { createDemoModel } from "./src/model.js";
 import { z } from "zod";
 
 // ---- 配置 DeepSeek 模型 ----
-const model = new ChatOpenAI({
-  model: "deepseek-v4-flash",
-  apiKey: process.env.DEEPSEEK_API_KEY,
-  configuration: { baseURL: "https://api.deepseek.com/v1" },
-});
+const model = createDemoModel();
 
 // ============================================================
 // 模拟知识库 — 一份虚构的公司政策文档

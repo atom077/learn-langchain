@@ -1,15 +1,10 @@
-import "dotenv/config";
 import { createAgent, tool } from "langchain";
-import { ChatOpenAI } from "@langchain/openai";
+import { createDemoModel } from "./src/model.js";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
 // ---- 配置 DeepSeek 模型 ----
-const model = new ChatOpenAI({
-  model: "deepseek-v4-flash",
-  apiKey: process.env.DEEPSEEK_API_KEY,
-  configuration: { baseURL: "https://api.deepseek.com/v1" },
-});
+const model = createDemoModel();
 
 // ============================================================
 // 模式 1: 复杂 Schema — 嵌套对象、枚举、可选字段

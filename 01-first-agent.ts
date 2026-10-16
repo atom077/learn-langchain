@@ -1,23 +1,15 @@
-import "dotenv/config";
+import { calculate } from "./src/calculator.js";
 import { createAgent, tool } from "langchain";
-import { ChatOpenAI } from "@langchain/openai";
+import { createDemoModel } from "./src/model.js";
 import { z } from "zod";
 
 // ---- 配置 DeepSeek 模型 ----
-// DeepSeek 提供 OpenAI 兼容 API（这个端点更成熟稳定）
-const model = new ChatOpenAI({
-  model: "deepseek-v4-flash", // DeepSeek-V3 对话模型
-  apiKey: process.env.DEEPSEEK_API_KEY,
-  configuration: {
-    baseURL: "https://api.deepseek.com/v1",
-  },
-});
+const model = createDemoModel();
 
 // ---- 工具 1: 计算器 ----
 const calculator = tool(
   ({ expression }) => {
-    // ⚠️ 生产环境不要用 eval，这里仅为演示
-    const result = Function(`"use strict"; return (${expression})`)();
+    const result = calculate(expression);
     return JSON.stringify({ expression, result });
   },
   {
@@ -58,7 +50,7 @@ const result = await agent.invoke({
 });
 
 // 输出最终回复
-const messages = result.messages as Array<{ role: string; content: string }>;
+const messages = result.messages;
 const lastMsg = messages[messages.length - 1];
 console.log("✅ Agent 回复:\n");
 console.log(lastMsg.content);

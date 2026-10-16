@@ -1,13 +1,8 @@
-import "dotenv/config";
 import { createAgent, tool } from "langchain";
-import { ChatOpenAI } from "@langchain/openai";
+import { createDemoModel } from "./src/model.js";
 import { z } from "zod";
 
-const model = new ChatOpenAI({
-  model: "deepseek-v4-flash",
-  apiKey: process.env.DEEPSEEK_API_KEY,
-  configuration: { baseURL: "https://api.deepseek.com/v1" },
-});
+const model = createDemoModel();
 
 // ---- 简单工具 ----
 const rememberNote = tool(
@@ -155,6 +150,7 @@ console.log("Agent 回答:", lastContent(summaryResult));
 console.log("   ✅ Agent 通过摘要知道了用户喜欢科幻片！");
 
 // ---- helper ----
-function lastContent(r: { messages: Array<{ content: string }> }): string {
-  return r.messages[r.messages.length - 1].content.slice(0, 200);
+function lastContent(r: { messages: Array<{ content: unknown }> }): string {
+  const content = r.messages.at(-1)?.content;
+  return (typeof content === "string" ? content : JSON.stringify(content) ?? "").slice(0, 200);
 }

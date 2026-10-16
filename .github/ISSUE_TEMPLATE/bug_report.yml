@@ -1,0 +1,17 @@
+name: 问题反馈
+description: 报告安装、示例或讲义问题（请勿提交敏感信息）
+body:
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤与预期结果
+      description: 请提供课程编号、运行命令和最小复现步骤。
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境与错误
+      description: 操作系统、Node/npm 版本、使用的模型 ID 和脱敏错误；不要粘贴 .env 或 API Key。
+    validations:
+      required: true

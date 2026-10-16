@@ -1,5 +1,4 @@
-import "dotenv/config";
-import { ChatOpenAI } from "@langchain/openai";
+import { createDemoModel } from "./src/model.js";
 import { tool } from "langchain";
 import { z } from "zod";
 import {
@@ -13,11 +12,7 @@ import {
   MemorySaver,
 } from "@langchain/langgraph";
 
-const model = new ChatOpenAI({
-  model: "deepseek-v4-flash",
-  apiKey: process.env.DEEPSEEK_API_KEY,
-  configuration: { baseURL: "https://api.deepseek.com/v1" },
-});
+const model = createDemoModel();
 
 // // ============================================================
 // // 演示 1: 基础 interrupt — 审批关
